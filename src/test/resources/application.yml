@@ -1,0 +1,15 @@
+spring:
+  liquibase:
+    enabled: false
+  datasource:
+    url: jdbc:h2:mem:casa_cultura;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    open-in-view: false
+security:
+  jwt:
+    secret: test-secret-for-jwt-authentication-at-least-32
+    expiration-ms: 3600000
