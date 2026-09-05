@@ -1,7 +1,21 @@
 package CasaCulturaAPI.config;
 
-import CasaCulturaAPI.entity.*;
-import CasaCulturaAPI.repository.*;
+import CasaCulturaAPI.shared.entity.*;
+import CasaCulturaAPI.shared.repository.*;
+import CasaCulturaAPI.feature.alumnos.repository.*;
+import CasaCulturaAPI.feature.asistencias.repository.*;
+import CasaCulturaAPI.feature.auth.repository.*;
+import CasaCulturaAPI.feature.catalogo.repository.*;
+import CasaCulturaAPI.feature.docentes.repository.*;
+import CasaCulturaAPI.feature.inscripciones.repository.*;
+import CasaCulturaAPI.feature.pagos.repository.*;
+import CasaCulturaAPI.feature.alumnos.repository.*;
+import CasaCulturaAPI.feature.asistencias.repository.*;
+import CasaCulturaAPI.feature.auth.repository.*;
+import CasaCulturaAPI.feature.catalogo.repository.*;
+import CasaCulturaAPI.feature.docentes.repository.*;
+import CasaCulturaAPI.feature.inscripciones.repository.*;
+import CasaCulturaAPI.feature.pagos.repository.*;
 import CasaCulturaAPI.util.CredentialHash;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;

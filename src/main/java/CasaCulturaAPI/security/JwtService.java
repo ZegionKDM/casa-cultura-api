@@ -1,6 +1,6 @@
 package CasaCulturaAPI.security;
 
-import CasaCulturaAPI.entity.Usuario;
+import CasaCulturaAPI.shared.entity.Usuario;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;

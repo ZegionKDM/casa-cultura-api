@@ -1,8 +1,8 @@
 package CasaCulturaAPI.security;
 
 import io.jsonwebtoken.JwtException;
-import CasaCulturaAPI.entity.EstadoRegistro;
-import CasaCulturaAPI.repository.UsuarioRepository;
+import CasaCulturaAPI.shared.entity.EstadoRegistro;
+import CasaCulturaAPI.feature.auth.repository.UsuarioRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

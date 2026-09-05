@@ -1,7 +1,7 @@
 package CasaCulturaAPI.config;
 
-import CasaCulturaAPI.entity.EstadoRegistro;
-import CasaCulturaAPI.repository.UsuarioRepository;
+import CasaCulturaAPI.shared.entity.EstadoRegistro;
+import CasaCulturaAPI.feature.auth.repository.UsuarioRepository;
 import CasaCulturaAPI.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;

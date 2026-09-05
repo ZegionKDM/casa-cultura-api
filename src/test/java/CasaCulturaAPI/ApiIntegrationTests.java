@@ -1,11 +1,11 @@
 package CasaCulturaAPI;
 
-import CasaCulturaAPI.entity.Persona;
-import CasaCulturaAPI.entity.Rol;
-import CasaCulturaAPI.entity.Usuario;
-import CasaCulturaAPI.repository.PersonaRepository;
-import CasaCulturaAPI.repository.RolRepository;
-import CasaCulturaAPI.repository.UsuarioRepository;
+import CasaCulturaAPI.shared.entity.Persona;
+import CasaCulturaAPI.shared.entity.Rol;
+import CasaCulturaAPI.shared.entity.Usuario;
+import CasaCulturaAPI.shared.repository.PersonaRepository;
+import CasaCulturaAPI.feature.auth.repository.RolRepository;
+import CasaCulturaAPI.feature.auth.repository.UsuarioRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

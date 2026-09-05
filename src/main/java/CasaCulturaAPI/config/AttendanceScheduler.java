@@ -1,6 +1,6 @@
 package CasaCulturaAPI.config;
 
-import CasaCulturaAPI.service.interfaces.AsistenciaService;
+import CasaCulturaAPI.feature.asistencias.service.AsistenciaService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;

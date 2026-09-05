@@ -1,6 +1,6 @@
 package CasaCulturaAPI.exception;
 
-import CasaCulturaAPI.dto.response.ApiResponse;
+import CasaCulturaAPI.shared.dto.ApiResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
