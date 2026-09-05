@@ -1,1 +1,33 @@
-spring.application.name=casa-cultura-api
+spring:
+  application:
+    name: casa-cultura-api
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  liquibase:
+    enabled: false
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/CasaCultura}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:CasaCultura12}
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:25}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:false}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:false}
+security:
+  jwt:
+    secret: ${JWT_SECRET:casa-cultura-jwt-secret-change-in-production-2026}
+    expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+initial-admin:
+  username: ${INITIAL_ADMIN_USERNAME:}
+  password: ${INITIAL_ADMIN_PASSWORD:}
+demo-data:
+  enabled: ${DEMO_DATA_ENABLED:false}
+attendance:
+  absence-check-ms: ${ATTENDANCE_ABSENCE_CHECK_MS:60000}

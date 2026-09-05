@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -18,6 +19,7 @@ public class RolController {
     private final RolService service;
 
     @PostMapping
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<ApiResponse<?>> crear(
             @Valid @RequestBody RolRequest request){
 
@@ -30,6 +32,7 @@ public class RolController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
     public ResponseEntity<ApiResponse<?>> listar(){
 
         return ResponseEntity.ok(
@@ -42,6 +45,7 @@ public class RolController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
     public ResponseEntity<ApiResponse<?>> obtener(@PathVariable Long id){
 
         return ResponseEntity.ok(
@@ -54,6 +58,7 @@ public class RolController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<ApiResponse<?>> actualizar(
             @PathVariable Long id,
             @Valid @RequestBody RolRequest request){
@@ -68,6 +73,7 @@ public class RolController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<ApiResponse<?>> eliminar(
             @PathVariable Long id){
 
