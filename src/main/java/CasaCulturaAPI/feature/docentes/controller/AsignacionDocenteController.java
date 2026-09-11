@@ -25,6 +25,13 @@ public class AsignacionDocenteController {
                 "Docente asignado correctamente.", service.asignar(request)));
     }
 
+    @GetMapping
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'DOCENTE', 'SUPERVISOR')")
+    public ResponseEntity<ApiResponse<?>> listarTodas() {
+        return ResponseEntity.ok(new ApiResponse<>(true,
+                "Consulta realizada correctamente.", service.listarTodas()));
+    }
+
     @GetMapping("/grupo/{grupoId}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'DOCENTE', 'SUPERVISOR')")
     public ResponseEntity<ApiResponse<?>> listar(@PathVariable Long grupoId) {

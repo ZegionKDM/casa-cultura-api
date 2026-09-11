@@ -143,6 +143,8 @@ public class CatalogServiceImpl implements CatalogService {
     }
     @Override @Transactional(readOnly = true)
     public List<CatalogResponse> listarHorarios(Long grupoId) { return horarioRepository.findByGrupoId(grupoId).stream().map(this::horario).toList(); }
+    @Override @Transactional(readOnly = true)
+    public List<CatalogResponse> listarTodosHorarios() { return horarioRepository.findAll().stream().map(this::horario).toList(); }
 
     private void validateOfferDates(OfertaCursoRequest request) {
         if (!request.getFechaInicio().isBefore(request.getFechaFin())) {

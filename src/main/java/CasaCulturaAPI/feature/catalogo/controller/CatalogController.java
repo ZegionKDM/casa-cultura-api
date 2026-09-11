@@ -75,6 +75,9 @@ public class CatalogController {
     public ResponseEntity<ApiResponse<?>> actualizarHorario(@PathVariable Long id, @Valid @RequestBody HorarioRequest request) {
         return ok(service.actualizarHorario(id, request));
     }
+    @GetMapping("/horarios")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'DOCENTE', 'SUPERVISOR')")
+    public ResponseEntity<ApiResponse<?>> listarTodosHorarios() { return ok(service.listarTodosHorarios()); }
     @GetMapping("/grupos/{grupoId}/horarios")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'DOCENTE', 'SUPERVISOR')")
     public ResponseEntity<ApiResponse<?>> listarHorarios(@PathVariable Long grupoId) { return ok(service.listarHorarios(grupoId)); }

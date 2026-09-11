@@ -66,6 +66,12 @@ public class AsignacionDocenteServiceImpl implements AsignacionDocenteService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<AsignacionDocenteResponse> listarTodas() {
+        return repository.findAll().stream().map(this::toResponse).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<AsignacionDocenteResponse> listarPorGrupo(Long grupoId) {
         Grupo grupo = grupoRepository.findById(grupoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Grupo no encontrado."));

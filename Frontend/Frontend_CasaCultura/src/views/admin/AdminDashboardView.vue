@@ -12,7 +12,7 @@ import {
 import AdminSidebar from '../../components/admin/AdminSidebar.vue'
 import AdminHeader from '../../components/admin/AdminHeader.vue'
 import StatCard from '../../components/admin/StatCard.vue'
-import { getSuperAdminData } from '../../services/superAdminService'
+import { getSuperAdminData } from '../../services/superAdminService.js'
 
 const isLoading = ref(true)
 const errorMessage = ref('')

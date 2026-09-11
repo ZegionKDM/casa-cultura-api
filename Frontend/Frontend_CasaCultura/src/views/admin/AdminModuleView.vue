@@ -69,7 +69,7 @@ import {
   registerAttendance,
   generateAbsences,
   getAttendanceReport
-} from '../../services/superAdminService'
+} from '../../services/superAdminService.js'
 
 const route = useRoute()
 const search = ref('')
