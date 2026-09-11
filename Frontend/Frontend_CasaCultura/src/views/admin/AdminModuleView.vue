@@ -480,6 +480,46 @@ async function fetchReport() {
 }
 
 // ----------------------------------------------------
+
+const todayDate = new Date().toISOString().slice(0, 10)
+
+// Input sanitizers & strict character limiters
+function filterNameInput(event, target, key) {
+  const clean = event.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s.'-]/g, '')
+  target[key] = clean
+  if (errors.value[key]) delete errors.value[key]
+}
+
+function filterPhoneInput(event, target, key) {
+  const clean = event.target.value.replace(/\D/g, '').slice(0, 10)
+  target[key] = clean
+  if (errors.value[key]) delete errors.value[key]
+}
+
+function filterMatriculaInput(event, target, key) {
+  const clean = event.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 30)
+  target[key] = clean
+  if (errors.value[key]) delete errors.value[key]
+}
+
+function filterUsernameInput(event, target, key) {
+  const clean = event.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 80)
+  target[key] = clean
+  if (errors.value[key]) delete errors.value[key]
+}
+
+function filterRoleNameInput(event, target, key) {
+  const clean = event.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 50)
+  target[key] = clean
+  if (errors.value[key]) delete errors.value[key]
+}
+
+function blockInvalidNumberKeys(event) {
+  if (['e', 'E', '+', '-'].includes(event.key)) {
+    event.preventDefault()
+  }
+}
+
 // VALIDATION LOGIC MATCHING BACKEND CONSTRAINTS
 // ----------------------------------------------------
 function validateName(val) {
@@ -617,13 +657,20 @@ function validateForm() {
     }
     const mErr = validateMatricula(formStudent.matricula)
     if (mErr) errors.value.matricula = mErr
-    const emErr = validateEmail(formStudent.correo, false)
+    const emErr = validateEmail(formStudent.correo, true)
     if (emErr) errors.value.correo = emErr
-    const phErr = validatePhone(formStudent.telefono, false)
+    const phErr = validatePhone(formStudent.telefono, true)
     if (phErr) errors.value.telefono = phErr
-    if (formStudent.fechaNacimiento) {
+    if (!formStudent.fechaNacimiento) {
+      errors.value.fechaNacimiento = 'La fecha de nacimiento es obligatoria.'
+    } else {
       const d = new Date(formStudent.fechaNacimiento)
       if (d > new Date()) errors.value.fechaNacimiento = 'La fecha de nacimiento no puede ser futura.'
+    }
+    if (!formStudent.direccion || !formStudent.direccion.trim()) {
+      errors.value.direccion = 'La dirección es obligatoria.'
+    } else if (formStudent.direccion.trim().length < 5) {
+      errors.value.direccion = 'Ingresa una dirección válida (mínimo 5 caracteres).'
     }
   } else if (moduleType.value === 'teachers') {
     const nErr = validateName(formTeacher.nombre)
@@ -634,10 +681,24 @@ function validateForm() {
       const amErr = validateName(formTeacher.apellidoMaterno)
       if (amErr) errors.value.apellidoMaterno = amErr
     }
-    const emErr = validateEmail(formTeacher.correo, false)
+    if (!formTeacher.especialidad || !formTeacher.especialidad.trim()) {
+      errors.value.especialidad = 'La especialidad cultural es obligatoria.'
+    }
+    const emErr = validateEmail(formTeacher.correo, true)
     if (emErr) errors.value.correo = emErr
-    const phErr = validatePhone(formTeacher.telefono, false)
+    const phErr = validatePhone(formTeacher.telefono, true)
     if (phErr) errors.value.telefono = phErr
+    if (!formTeacher.fechaNacimiento) {
+      errors.value.fechaNacimiento = 'La fecha de nacimiento es obligatoria.'
+    } else {
+      const d = new Date(formTeacher.fechaNacimiento)
+      if (d > new Date()) errors.value.fechaNacimiento = 'La fecha de nacimiento no puede ser futura.'
+    }
+    if (!formTeacher.direccion || !formTeacher.direccion.trim()) {
+      errors.value.direccion = 'La dirección es obligatoria.'
+    } else if (formTeacher.direccion.trim().length < 5) {
+      errors.value.direccion = 'Ingresa una dirección válida (mínimo 5 caracteres).'
+    }
   } else if (moduleType.value === 'schedules') {
     if (!formSchedule.grupoId) errors.value.grupoId = 'Selecciona un grupo.'
     if (!formSchedule.horaInicio) errors.value.horaInicio = 'Hora de inicio requerida.'
@@ -2880,11 +2941,12 @@ const specialContent = computed(() => {
               <div class="field">
                 <label>Nombre de Usuario *</label>
                 <input
-                  v-model="formUser.nombreUsuario"
+                  :value="formUser.nombreUsuario"
                   type="text"
                   maxlength="80"
                   placeholder="ej. juan.perez"
                   :class="{ 'has-error': errors.nombreUsuario }"
+                  @input="filterUsernameInput($event, formUser, 'nombreUsuario')"
                 />
                 <span
                   v-if="errors.nombreUsuario"
@@ -2936,11 +2998,12 @@ const specialContent = computed(() => {
             <div class="field">
               <label>Nombre del Rol *</label>
               <input
-                v-model="formRole.nombre"
+                :value="formRole.nombre"
                 type="text"
                 maxlength="50"
                 placeholder="Ej. COORDINADOR_ACADEMICO"
                 :class="{ 'has-error': errors.nombre }"
+                @input="filterRoleNameInput($event, formRole, 'nombre')"
               />
               <span
                 v-if="errors.nombre"
@@ -2964,11 +3027,12 @@ const specialContent = computed(() => {
               <div class="field">
                 <label>Nombre(s) *</label>
                 <input
-                  v-model="formStudent.nombre"
+                  :value="formStudent.nombre"
                   type="text"
                   maxlength="80"
                   placeholder="Nombre de pila"
                   :class="{ 'has-error': errors.nombre }"
+                  @input="filterNameInput($event, formStudent, 'nombre')"
                 />
                 <span
                   v-if="errors.nombre"
@@ -2978,11 +3042,12 @@ const specialContent = computed(() => {
               <div class="field">
                 <label>Apellido Paterno *</label>
                 <input
-                  v-model="formStudent.apellidoPaterno"
+                  :value="formStudent.apellidoPaterno"
                   type="text"
                   maxlength="80"
                   placeholder="Primer apellido"
                   :class="{ 'has-error': errors.apellidoPaterno }"
+                  @input="filterNameInput($event, formStudent, 'apellidoPaterno')"
                 />
                 <span
                   v-if="errors.apellidoPaterno"
@@ -2995,21 +3060,23 @@ const specialContent = computed(() => {
               <div class="field">
                 <label>Apellido Materno</label>
                 <input
-                  v-model="formStudent.apellidoMaterno"
+                  :value="formStudent.apellidoMaterno"
                   type="text"
                   maxlength="80"
                   placeholder="Segundo apellido (opcional)"
                   :class="{ 'has-error': errors.apellidoMaterno }"
+                  @input="filterNameInput($event, formStudent, 'apellidoMaterno')"
                 />
               </div>
               <div class="field">
                 <label>Matrícula Oficial *</label>
                 <input
-                  v-model="formStudent.matricula"
+                  :value="formStudent.matricula"
                   type="text"
                   maxlength="30"
                   placeholder="ALU-2026-001"
                   :class="{ 'has-error': errors.matricula }"
+                  @input="filterMatriculaInput($event, formStudent, 'matricula')"
                 />
                 <span
                   v-if="errors.matricula"
@@ -3020,13 +3087,14 @@ const specialContent = computed(() => {
 
             <div class="form-grid-2">
               <div class="field">
-                <label>Correo Electrónico</label>
+                <label>Correo Electrónico *</label>
                 <input
                   v-model="formStudent.correo"
                   type="email"
                   maxlength="160"
                   placeholder="correo@ejemplo.com"
                   :class="{ 'has-error': errors.correo }"
+                  @input="delete errors.correo"
                 />
                 <span
                   v-if="errors.correo"
@@ -3034,13 +3102,14 @@ const specialContent = computed(() => {
                 >{{ errors.correo }}</span>
               </div>
               <div class="field">
-                <label>Teléfono (10 dígitos)</label>
+                <label>Teléfono (10 dígitos) *</label>
                 <input
-                  v-model="formStudent.telefono"
+                  :value="formStudent.telefono"
                   type="tel"
-                  maxlength="15"
+                  maxlength="10"
                   placeholder="9531234567"
                   :class="{ 'has-error': errors.telefono }"
+                  @input="filterPhoneInput($event, formStudent, 'telefono')"
                 />
                 <span
                   v-if="errors.telefono"
@@ -3050,11 +3119,14 @@ const specialContent = computed(() => {
             </div>
 
             <div class="field">
-              <label>Fecha de Nacimiento</label>
+              <label>Fecha de Nacimiento *</label>
               <input
                 v-model="formStudent.fechaNacimiento"
                 type="date"
+                :max="todayDate"
+                min="1920-01-01"
                 :class="{ 'has-error': errors.fechaNacimiento }"
+                @change="delete errors.fechaNacimiento"
               />
               <span
                 v-if="errors.fechaNacimiento"
@@ -3063,13 +3135,19 @@ const specialContent = computed(() => {
             </div>
 
             <div class="field">
-              <label>Dirección</label>
+              <label>Dirección *</label>
               <input
                 v-model="formStudent.direccion"
                 type="text"
                 maxlength="255"
                 placeholder="Calle, Número, Colonia, Municipio"
+                :class="{ 'has-error': errors.direccion }"
+                @input="delete errors.direccion"
               />
+              <span
+                v-if="errors.direccion"
+                class="error-text"
+              >{{ errors.direccion }}</span>
             </div>
           </template>
 
@@ -3079,11 +3157,12 @@ const specialContent = computed(() => {
               <div class="field">
                 <label>Nombre(s) *</label>
                 <input
-                  v-model="formTeacher.nombre"
+                  :value="formTeacher.nombre"
                   type="text"
                   maxlength="80"
                   placeholder="Nombre(s)"
                   :class="{ 'has-error': errors.nombre }"
+                  @input="filterNameInput($event, formTeacher, 'nombre')"
                 />
                 <span
                   v-if="errors.nombre"
@@ -3093,11 +3172,12 @@ const specialContent = computed(() => {
               <div class="field">
                 <label>Apellido Paterno *</label>
                 <input
-                  v-model="formTeacher.apellidoPaterno"
+                  :value="formTeacher.apellidoPaterno"
                   type="text"
                   maxlength="80"
                   placeholder="Primer apellido"
                   :class="{ 'has-error': errors.apellidoPaterno }"
+                  @input="filterNameInput($event, formTeacher, 'apellidoPaterno')"
                 />
                 <span
                   v-if="errors.apellidoPaterno"
@@ -3110,33 +3190,41 @@ const specialContent = computed(() => {
               <div class="field">
                 <label>Apellido Materno</label>
                 <input
-                  v-model="formTeacher.apellidoMaterno"
+                  :value="formTeacher.apellidoMaterno"
                   type="text"
                   maxlength="80"
                   placeholder="Segundo apellido"
                   :class="{ 'has-error': errors.apellidoMaterno }"
+                  @input="filterNameInput($event, formTeacher, 'apellidoMaterno')"
                 />
               </div>
               <div class="field">
-                <label>Especialidad Cultural</label>
+                <label>Especialidad Cultural *</label>
                 <input
                   v-model="formTeacher.especialidad"
                   type="text"
                   maxlength="100"
                   placeholder="Ej. Guitarra Clásica, Danza, Pintura"
+                  :class="{ 'has-error': errors.especialidad }"
+                  @input="delete errors.especialidad"
                 />
+                <span
+                  v-if="errors.especialidad"
+                  class="error-text"
+                >{{ errors.especialidad }}</span>
               </div>
             </div>
 
             <div class="form-grid-2">
               <div class="field">
-                <label>Correo Electrónico</label>
+                <label>Correo Electrónico *</label>
                 <input
                   v-model="formTeacher.correo"
                   type="email"
                   maxlength="160"
                   placeholder="profesor@ejemplo.com"
                   :class="{ 'has-error': errors.correo }"
+                  @input="delete errors.correo"
                 />
                 <span
                   v-if="errors.correo"
@@ -3144,13 +3232,14 @@ const specialContent = computed(() => {
                 >{{ errors.correo }}</span>
               </div>
               <div class="field">
-                <label>Teléfono (10 dígitos)</label>
+                <label>Teléfono (10 dígitos) *</label>
                 <input
-                  v-model="formTeacher.telefono"
+                  :value="formTeacher.telefono"
                   type="tel"
-                  maxlength="15"
+                  maxlength="10"
                   placeholder="9531234567"
                   :class="{ 'has-error': errors.telefono }"
+                  @input="filterPhoneInput($event, formTeacher, 'telefono')"
                 />
                 <span
                   v-if="errors.telefono"
@@ -3160,13 +3249,35 @@ const specialContent = computed(() => {
             </div>
 
             <div class="field">
-              <label>Dirección</label>
+              <label>Fecha de Nacimiento *</label>
+              <input
+                v-model="formTeacher.fechaNacimiento"
+                type="date"
+                :max="todayDate"
+                min="1920-01-01"
+                :class="{ 'has-error': errors.fechaNacimiento }"
+                @change="delete errors.fechaNacimiento"
+              />
+              <span
+                v-if="errors.fechaNacimiento"
+                class="error-text"
+              >{{ errors.fechaNacimiento }}</span>
+            </div>
+
+            <div class="field">
+              <label>Dirección *</label>
               <input
                 v-model="formTeacher.direccion"
                 type="text"
                 maxlength="255"
                 placeholder="Domicilio completo"
+                :class="{ 'has-error': errors.direccion }"
+                @input="delete errors.direccion"
               />
+              <span
+                v-if="errors.direccion"
+                class="error-text"
+              >{{ errors.direccion }}</span>
             </div>
           </template>
 
@@ -3401,9 +3512,11 @@ const specialContent = computed(() => {
                   v-model="formPayment.monto"
                   type="number"
                   min="1"
-                  step="1"
+                  max="100000"
+                  step="0.01"
                   placeholder="500"
                   :class="{ 'has-error': errors.monto }"
+                  @keydown="blockInvalidNumberKeys"
                 />
                 <span
                   v-if="errors.monto"
