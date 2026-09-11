@@ -1,0 +1,19 @@
+@import './base.css';
+
+:root {
+  font-family: Arial, Helvetica, sans-serif;
+  color: #282528;
+  background: #fcf7f8;
+}
+
+html,
+body,
+#app {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+body {
+  display: block;
+}
