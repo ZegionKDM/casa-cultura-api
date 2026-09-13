@@ -40,6 +40,7 @@ const roleLabel = computed(() => ({
   ALUMNO: 'Portal del Alumno',
   SUPERVISOR: 'Panel del Supervisor',
   SUPER_ADMIN: 'Super Administrador',
+  DOCENTE: 'Portal del Docente',
 }[props.role] || props.role))
 
 const displayName = computed(() => props.fullName || props.username || 'Estudiante')

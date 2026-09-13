@@ -144,6 +144,8 @@ async function navigateToRole(user) {
     await router.push('/supervisor')
   } else if (role === 'SUPER_ADMIN') {
     await router.push('/admin/dashboard')
+  } else if (role === 'DOCENTE') {
+    await router.push('/docente')
   }
 }
 

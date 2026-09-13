@@ -9,4 +9,7 @@ public interface InscripcionRepository extends JpaRepository<Inscripcion, Long> 
     List<Inscripcion> findByAlumnoAndEstado(Alumno alumno, EstadoInscripcion estado);
     List<Inscripcion> findByGrupoAndEstado(Grupo grupo, EstadoInscripcion estado);
     List<Inscripcion> findByGrupoIdInAndEstado(List<Long> grupoIds, EstadoInscripcion estado);
+    List<Inscripcion> findByGrupoId(Long grupoId);
+    long countByGrupoAndEstado(Grupo grupo, EstadoInscripcion estado);
 }
+

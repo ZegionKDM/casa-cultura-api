@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import LoginView from '../views/LoginView.vue'
 import StudentView from '../views/StudentView.vue'
 import SupervisorView from '../views/SupervisorView.vue'
+import DocenteView from '../views/DocenteView.vue'
 import AdminDashboardView from '../views/admin/AdminDashboardView.vue'
 import AdminModuleView from '../views/admin/AdminModuleView.vue'
 
@@ -22,6 +23,16 @@ const router = createRouter({
       path: '/supervisor',
       name: 'supervisor',
       component: SupervisorView,
+    },
+    {
+      path: '/docente',
+      name: 'docente',
+      component: DocenteView,
+      meta: {
+        title: 'Portal del Docente',
+        subtitle: 'Panel de Control e Instrucción',
+        requiresTeacher: true
+      }
     },
     {
       path: '/super-admin',
@@ -212,16 +223,20 @@ router.beforeEach((to) => {
     return '/'
   }
 
+  if (to.path === '/docente' && role !== 'DOCENTE') {
+    return role === 'SUPERVISOR' ? '/supervisor' : role === 'ALUMNO' ? '/alumno' : role === 'SUPER_ADMIN' ? '/admin/dashboard' : '/'
+  }
+
   if (to.path === '/alumno' && role !== 'ALUMNO') {
-    return role === 'SUPERVISOR' ? '/supervisor' : role === 'SUPER_ADMIN' ? '/admin/dashboard' : '/'
+    return role === 'DOCENTE' ? '/docente' : role === 'SUPERVISOR' ? '/supervisor' : role === 'SUPER_ADMIN' ? '/admin/dashboard' : '/'
   }
 
   if (to.path === '/supervisor' && role !== 'SUPERVISOR') {
-    return role === 'ALUMNO' ? '/alumno' : role === 'SUPER_ADMIN' ? '/admin/dashboard' : '/'
+    return role === 'DOCENTE' ? '/docente' : role === 'ALUMNO' ? '/alumno' : role === 'SUPER_ADMIN' ? '/admin/dashboard' : '/'
   }
 
   if ((to.path.startsWith('/admin') || to.path === '/super-admin') && role !== 'SUPER_ADMIN') {
-    return role === 'SUPERVISOR' ? '/supervisor' : role === 'ALUMNO' ? '/alumno' : '/'
+    return role === 'DOCENTE' ? '/docente' : role === 'SUPERVISOR' ? '/supervisor' : role === 'ALUMNO' ? '/alumno' : '/'
   }
 
   return true

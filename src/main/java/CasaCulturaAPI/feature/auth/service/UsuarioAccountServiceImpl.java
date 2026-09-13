@@ -70,7 +70,7 @@ public class UsuarioAccountServiceImpl implements UsuarioAccountService {
 
         boolean mustChange = request.getDebeCambiarPassword() != null
                 ? request.getDebeCambiarPassword()
-                : "ALUMNO".equalsIgnoreCase(rol.getNombre());
+                : ("ALUMNO".equalsIgnoreCase(rol.getNombre()) || "DOCENTE".equalsIgnoreCase(rol.getNombre()));
 
         Usuario usuario = usuarioRepository.save(Usuario.builder()
                 .persona(persona)
