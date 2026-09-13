@@ -15,4 +15,8 @@ public class PagoResponse {
     private LocalDate fechaVencimiento;
     private LocalDate fechaPago;
     private EstadoPago estado;
+    private Double monto;
+    private String alumno;
+    private String matricula;
+    private String grupo;
 }

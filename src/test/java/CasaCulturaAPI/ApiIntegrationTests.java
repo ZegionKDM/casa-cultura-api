@@ -117,6 +117,27 @@ class ApiIntegrationTests {
                 .andExpect(jsonPath("$.success").value(false));
     }
 
+    @Test
+    void registerStudentWithoutAddressFailsValidation() throws Exception {
+        String token = loginToken();
+        mockMvc.perform(post("/api/v1/alumnos")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "nombre":"Carlos",
+                                  "apellidoPaterno":"Fuentes",
+                                  "fechaNacimiento":"2011-03-15",
+                                  "telefono":"5559876543",
+                                  "correo":"carlos@example.com",
+                                  "matricula":"INT-ALU-002"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("direccion")));
+    }
+
     private String loginToken() throws Exception {
         String response = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

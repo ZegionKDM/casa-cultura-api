@@ -73,23 +73,28 @@ class AsistenciaServiceIntegrationTests {
     @Test
     void completedScheduleGeneratesAbsence() {
         LocalDate today = LocalDate.now();
+        LocalTime now = LocalTime.now();
         Alumno alumno = createStudent("ABSENCE-TEST-" + System.nanoTime());
         Grupo grupo = createGroup("ABSENCE-GROUP-" + System.nanoTime());
+        LocalTime fin = now.isAfter(LocalTime.of(0, 2)) ? now.minusSeconds(30) : LocalTime.of(23, 59);
+        LocalTime inicio = now.isAfter(LocalTime.of(0, 2)) ? fin.minusMinutes(1) : LocalTime.of(23, 58);
+        LocalDate fecha = now.isAfter(LocalTime.of(0, 2)) ? today : today.minusDays(1);
+
         Horario horario = horarioRepository.save(Horario.builder()
                 .grupo(grupo)
-                .dia(today.getDayOfWeek())
-                .horaInicio(LocalTime.now().minusHours(2))
-                .horaFin(LocalTime.now().minusHours(1))
+                .dia(fecha.getDayOfWeek())
+                .horaInicio(inicio)
+                .horaFin(fin)
                 .build());
         Inscripcion inscripcion = inscripcionRepository.save(Inscripcion.builder()
                 .alumno(alumno).grupo(grupo).build());
 
-        int generated = asistenciaService.generarFaltas(today);
+        int generated = asistenciaService.generarFaltas(fecha);
 
         assertEquals(1, generated);
         assertEquals(EstadoAsistencia.FALTA,
                 asistenciaRepository.findByInscripcionAndHorarioAndFecha(
-                        inscripcion, horario, today).orElseThrow().getEstado());
+                        inscripcion, horario, fecha).orElseThrow().getEstado());
     }
 
     @Test

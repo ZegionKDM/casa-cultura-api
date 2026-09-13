@@ -26,6 +26,13 @@ export async function apiRequest(path, options = {}) {
 
   const payload = await response.json().catch(() => null)
   if (!response.ok || payload?.success === false) {
+    if (response.status === 401) {
+      clearStoredSession()
+      if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+        window.location.href = '/?expired=true'
+      }
+      throw new Error('Tu sesión ha expirado o no es válida. Por favor, inicia sesión nuevamente.')
+    }
     throw new Error(payload?.message || 'No fue posible completar la solicitud.')
   }
 

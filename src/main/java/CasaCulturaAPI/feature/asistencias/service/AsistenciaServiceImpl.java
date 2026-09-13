@@ -5,7 +5,6 @@ import CasaCulturaAPI.feature.asistencias.dto.request.AsistenciaManualRequest;
 import CasaCulturaAPI.feature.asistencias.dto.response.AsistenciaResponse;
 import CasaCulturaAPI.shared.entity.*;
 import CasaCulturaAPI.exception.ResourceNotFoundException;
-import CasaCulturaAPI.notification.EmailNotificationPort;
 import CasaCulturaAPI.shared.repository.*;
 import CasaCulturaAPI.feature.alumnos.repository.*;
 import CasaCulturaAPI.feature.asistencias.repository.*;
@@ -44,7 +43,6 @@ public class AsistenciaServiceImpl implements AsistenciaService {
     private final AsignacionDocenteRepository asignacionRepository;
     private final DocenteRepository docenteRepository;
     private final UsuarioRepository usuarioRepository;
-    private final EmailNotificationPort emailNotificationPort;
 
     @Override
     @Transactional
@@ -71,9 +69,6 @@ public class AsistenciaServiceImpl implements AsistenciaService {
                             .estado(now.toLocalTime().isAfter(horario.getHoraInicio().plusMinutes(15))
                                     ? EstadoAsistencia.RETARDO : EstadoAsistencia.PRESENTE)
                             .build()));
-            if (existing.isEmpty()) {
-                notifyAttendance(alumno, asistencia);
-            }
             return toResponse(asistencia);
         }
         throw new IllegalArgumentException("No existe un horario activo para la credencial en este momento.");
@@ -122,10 +117,14 @@ public class AsistenciaServiceImpl implements AsistenciaService {
     @Override
     @Transactional(readOnly = true)
     public List<AsistenciaResponse> listar(LocalDate fecha, Long alumnoId) {
-        List<Asistencia> asistencias = alumnoId == null
-                ? asistenciaRepository.findByFechaOrderByHoraRegistroAsc(
-                        fecha == null ? LocalDate.now() : fecha)
-                : asistenciaRepository.findByInscripcionAlumnoIdOrderByFechaDescHoraRegistroDesc(alumnoId);
+        List<Asistencia> asistencias;
+        if (alumnoId != null) {
+            asistencias = asistenciaRepository.findByInscripcionAlumnoIdOrderByFechaDescHoraRegistroDesc(alumnoId);
+        } else if (fecha != null) {
+            asistencias = asistenciaRepository.findByFechaOrderByHoraRegistroAsc(fecha);
+        } else {
+            asistencias = asistenciaRepository.findAllByOrderByFechaDescHoraRegistroDesc();
+        }
         return asistencias.stream().map(this::toResponse).toList();
     }
 
@@ -176,22 +175,17 @@ public class AsistenciaServiceImpl implements AsistenciaService {
         return generated;
     }
 
-    private void notifyAttendance(Alumno alumno, Asistencia asistencia) {
-        if (alumno.getPersona().getCorreo() == null || alumno.getPersona().getCorreo().isBlank()) {
-            return;
-        }
-        emailNotificationPort.send(alumno.getPersona().getCorreo(), "Registro de asistencia",
-                "Se registró la asistencia de " + alumno.getPersona().getNombre() +
-                        " con estado " + asistencia.getEstado() + ".");
-    }
-
     private AsistenciaResponse toResponse(Asistencia asistencia) {
         Alumno alumno = asistencia.getInscripcion().getAlumno();
         Persona persona = alumno.getPersona();
+        String nombreCompleto = persona.getNombre() + " " + persona.getApellidoPaterno() +
+                (persona.getApellidoMaterno() != null && !persona.getApellidoMaterno().isBlank()
+                        ? " " + persona.getApellidoMaterno() : "");
         return AsistenciaResponse.builder()
                 .id(asistencia.getId())
+                .fotoUrl(persona.getFotoUrl())
                 .matricula(alumno.getMatricula())
-                .alumno(persona.getNombre() + " " + persona.getApellidoPaterno())
+                .alumno(nombreCompleto.trim())
                 .grupo(asistencia.getInscripcion().getGrupo().getNombreGrupo())
                 .fecha(asistencia.getFecha())
                 .horaRegistro(asistencia.getHoraRegistro())

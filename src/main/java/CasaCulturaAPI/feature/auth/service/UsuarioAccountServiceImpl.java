@@ -42,13 +42,43 @@ public class UsuarioAccountServiceImpl implements UsuarioAccountService {
         if (usuarioRepository.existsByNombreUsuario(request.getNombreUsuario())) {
             throw new IllegalArgumentException("El nombre de usuario ya existe.");
         }
-        Persona persona = personaRepository.findById(request.getPersonaId())
-                .orElseThrow(() -> new ResourceNotFoundException("Persona no encontrada."));
         Rol rol = rolRepository.findById(request.getRolId())
                 .orElseThrow(() -> new ResourceNotFoundException("Rol no encontrado."));
-        Usuario usuario = usuarioRepository.save(Usuario.builder().persona(persona).rol(rol)
-                .nombreUsuario(request.getNombreUsuario())
-                .passwordHash(passwordEncoder.encode(request.getPassword())).build());
+
+        Persona persona;
+        if (request.getPersonaId() != null) {
+            persona = personaRepository.findById(request.getPersonaId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Persona no encontrada."));
+        } else {
+            if (request.getNombre() == null || request.getNombre().isBlank()) {
+                throw new IllegalArgumentException("El nombre de la persona es obligatorio.");
+            }
+            if (request.getApellidoPaterno() == null || request.getApellidoPaterno().isBlank()) {
+                throw new IllegalArgumentException("El apellido paterno es obligatorio.");
+            }
+            persona = personaRepository.save(Persona.builder()
+                    .nombre(request.getNombre().trim())
+                    .apellidoPaterno(request.getApellidoPaterno().trim())
+                    .apellidoMaterno(request.getApellidoMaterno() != null && !request.getApellidoMaterno().isBlank()
+                            ? request.getApellidoMaterno().trim() : null)
+                    .correo(request.getCorreo() != null && !request.getCorreo().isBlank()
+                            ? request.getCorreo().trim() : null)
+                    .telefono(request.getTelefono() != null && !request.getTelefono().isBlank()
+                            ? request.getTelefono().trim() : null)
+                    .build());
+        }
+
+        boolean mustChange = request.getDebeCambiarPassword() != null
+                ? request.getDebeCambiarPassword()
+                : "ALUMNO".equalsIgnoreCase(rol.getNombre());
+
+        Usuario usuario = usuarioRepository.save(Usuario.builder()
+                .persona(persona)
+                .rol(rol)
+                .nombreUsuario(request.getNombreUsuario().trim())
+                .passwordHash(passwordEncoder.encode(request.getPassword()))
+                .debeCambiarPassword(mustChange)
+                .build());
         return toResponse(usuario);
     }
 
@@ -83,12 +113,14 @@ public class UsuarioAccountServiceImpl implements UsuarioAccountService {
             throw new IllegalArgumentException("La contraseña actual no es válida.");
         }
         usuario.setPasswordHash(passwordEncoder.encode(request.getPasswordNueva()));
+        usuario.setDebeCambiarPassword(false);
         usuarioRepository.save(usuario);
     }
 
     private UsuarioResponse toResponse(Usuario x) {
         return UsuarioResponse.builder().id(x.getId()).personaId(x.getPersona().getId())
                 .rolId(x.getRol().getId()).rol(x.getRol().getNombre())
-                .nombreUsuario(x.getNombreUsuario()).estado(x.getEstado()).build();
+                .nombreUsuario(x.getNombreUsuario()).estado(x.getEstado())
+                .debeCambiarPassword(Boolean.TRUE.equals(x.getDebeCambiarPassword())).build();
     }
 }

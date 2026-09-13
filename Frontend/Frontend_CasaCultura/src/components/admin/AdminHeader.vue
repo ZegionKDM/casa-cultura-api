@@ -10,6 +10,7 @@ import {
   LogOut
 } from 'lucide-vue-next'
 import { clearStoredSession } from '../../services/apiService'
+import { toggleAdminSidebar } from './adminNavState.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -82,7 +83,11 @@ const handleLogout = async () => {
 <template>
   <header class="header">
     <div class="header-left">
-      <button class="icon-button" aria-label="Menú">
+      <button
+        class="icon-button menu-toggle-btn"
+        aria-label="Abrir menú de navegación"
+        @click="toggleAdminSidebar"
+      >
         <Menu :size="22" />
       </button>
 
@@ -261,6 +266,16 @@ const handleLogout = async () => {
 .icon-button:hover {
   background: #ebeef5;
   color: #202838;
+}
+
+.menu-toggle-btn {
+  display: none;
+}
+
+@media (max-width: 840px) {
+  .menu-toggle-btn {
+    display: flex;
+  }
 }
 
 .notification-badge {

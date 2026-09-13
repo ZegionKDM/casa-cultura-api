@@ -120,12 +120,20 @@ export function createSchedule(schedule) {
   return apiRequest('/api/v1/horarios', { method: 'POST', body: JSON.stringify(schedule) })
 }
 
+export function createSchedulesBatch(batchPayload) {
+  return apiRequest('/api/v1/horarios/batch', { method: 'POST', body: JSON.stringify(batchPayload) })
+}
+
 export function updateSchedule(id, schedule) {
   return apiRequest(`/api/v1/horarios/${id}`, { method: 'PUT', body: JSON.stringify(schedule) })
 }
 
 export function getAllSchedules() {
   return apiRequest('/api/v1/horarios')
+}
+
+export function deleteSchedule(id) {
+  return apiRequest(`/api/v1/horarios/${id}`, { method: 'DELETE' })
 }
 
 export function getGroupSchedules(grupoId) {
@@ -137,9 +145,20 @@ export function createEnrollment(enrollment) {
   return apiRequest('/api/v1/inscripciones', { method: 'POST', body: JSON.stringify(enrollment) })
 }
 
+export function deactivateEnrollment(id) {
+  return apiRequest(`/api/v1/inscripciones/${id}/baja`, { method: 'PATCH' })
+}
+
 // Pagos
 export function createPayment(payment) {
   return apiRequest('/api/v1/pagos', { method: 'POST', body: JSON.stringify(payment) })
+}
+
+export function updatePaymentStatus(id, estado) {
+  return apiRequest(`/api/v1/pagos/${id}/estado`, {
+    method: 'PATCH',
+    body: JSON.stringify({ estado })
+  })
 }
 
 // Usuarios

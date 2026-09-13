@@ -77,10 +77,10 @@ const formErrors = computed(() => ({
     nombre: validateName(forms.docente.nombre, 'El nombre es obligatorio.'),
     apellidoPaterno: validateName(forms.docente.apellidoPaterno, 'El apellido paterno es obligatorio.'),
     apellidoMaterno: validateOptionalName(forms.docente.apellidoMaterno),
-    telefono: validateOptionalPhone(forms.docente.telefono),
-    correo: validateOptionalEmail(forms.docente.correo),
+    telefono: validateRequiredPhone(forms.docente.telefono),
+    correo: validateRequiredEmail(forms.docente.correo),
     especialidad: validateLength(forms.docente.especialidad, 120),
-    direccion: validateLength(forms.docente.direccion, 255),
+    direccion: validateRequiredAddress(forms.docente.direccion),
   },
   alumno: {
     nombre: validateName(forms.alumno.nombre, 'El nombre es obligatorio.'),
@@ -88,9 +88,9 @@ const formErrors = computed(() => ({
     apellidoMaterno: validateOptionalName(forms.alumno.apellidoMaterno),
     matricula: validateMatricula(forms.alumno.matricula),
     fechaNacimiento: validateBirthDate(forms.alumno.fechaNacimiento),
-    telefono: validateOptionalPhone(forms.alumno.telefono),
-    correo: validateOptionalEmail(forms.alumno.correo),
-    direccion: validateLength(forms.alumno.direccion, 255),
+    telefono: validateRequiredPhone(forms.alumno.telefono),
+    correo: validateRequiredEmail(forms.alumno.correo),
+    direccion: validateRequiredAddress(forms.alumno.direccion),
   },
 }))
 
@@ -123,6 +123,28 @@ function validateOptionalName(value) {
   return validateName(value, '')
 }
 
+function validateRequiredEmail(value) {
+  const normalized = String(value || '').trim()
+  if (!normalized) return 'El correo electrónico es obligatorio.'
+  if (normalized.length > 160) return 'No puede superar 160 caracteres.'
+  return emailPattern.test(normalized) ? '' : 'Escribe un correo válido, por ejemplo nombre@dominio.com.'
+}
+
+function validateRequiredPhone(value) {
+  const clean = String(value || '').replace(/\D/g, '')
+  if (!clean) return 'El teléfono es obligatorio.'
+  if (clean.length !== 10) return 'El teléfono debe tener exactamente 10 dígitos numéricos.'
+  return ''
+}
+
+function validateRequiredAddress(value) {
+  const normalized = String(value || '').trim()
+  if (!normalized) return 'El domicilio / dirección es obligatorio.'
+  if (normalized.length < 5) return 'Ingresa un domicilio completo (mínimo 5 caracteres).'
+  if (normalized.length > 255) return 'No puede superar 255 caracteres.'
+  return ''
+}
+
 function validateOptionalEmail(value) {
   const normalized = String(value || '').trim()
   if (!normalized) return ''
@@ -147,7 +169,7 @@ function validateMatricula(value) {
 }
 
 function validateBirthDate(value) {
-  if (!value) return ''
+  if (!value) return 'La fecha de nacimiento es obligatoria.'
   const date = new Date(`${value}T00:00:00`)
   if (Number.isNaN(date.getTime())) return 'Selecciona una fecha válida.'
   return date > new Date() ? 'La fecha no puede ser futura.' : ''

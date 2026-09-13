@@ -1,9 +1,24 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { changePassword, loginUser } from '../services/authService'
+import {
+  Lock,
+  KeyRound,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  AlertCircle,
+  CheckCircle2,
+  ArrowRight,
+  User,
+  LogOut,
+  HelpCircle,
+  Heart
+} from 'lucide-vue-next'
 
 const router = useRouter()
+const route = useRoute()
 const credentials = reactive({
   nombreUsuario: '',
   password: '',
@@ -11,6 +26,8 @@ const credentials = reactive({
 
 const rememberSession = ref(false)
 const showPassword = ref(false)
+const showNewPassword = ref(false)
+const showConfirmPassword = ref(false)
 const isLoading = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
@@ -23,6 +40,9 @@ const activeToken = ref('')
 const savedUsername = localStorage.getItem('casa-cultura-username')
 
 onMounted(() => {
+  if (route.query.expired) {
+    errorMessage.value = 'Tu sesión anterior había expirado. Por favor, inicia sesión de nuevo.'
+  }
   if (savedUsername) {
     credentials.nombreUsuario = savedUsername
     rememberSession.value = true
@@ -30,6 +50,21 @@ onMounted(() => {
 })
 
 const buttonLabel = computed(() => (isLoading.value ? 'VALIDANDO...' : 'INICIAR SESIÓN'))
+
+// Real-time password criteria
+const hasMinLength = computed(() => newPassword.value.length >= 8)
+const passwordsMatch = computed(() => Boolean(newPassword.value && newPassword.value === confirmPassword.value))
+const passwordsMismatch = computed(() => Boolean(confirmPassword.value.length > 0 && newPassword.value !== confirmPassword.value))
+const canSubmitPasswordChange = computed(() => hasMinLength.value && passwordsMatch.value)
+
+const roleDisplay = computed(() => {
+  const r = String(authenticatedUser.value?.rol || '').replace('ROLE_', '')
+  if (r === 'ALUMNO') return 'Estudiante'
+  if (r === 'SUPERVISOR') return 'Supervisor'
+  if (r === 'SUPER_ADMIN') return 'Super Administrador'
+  if (r === 'DOCENTE') return 'Docente'
+  return r || 'Usuario'
+})
 
 async function submitLogin() {
   errorMessage.value = ''
@@ -129,162 +164,310 @@ function clearSession() {
 
 <template>
   <main class="login-page">
-    <section class="brand-panel" aria-label="Casa de la Cultura de Tlaxiaco">
-      <img class="brand-logo" src="../assets/casacul.png" alt="Casa de la Cultura de Tlaxiaco" />
-      <img class="building-image" src="../assets/casa_lodgo.png" alt="" />
-    </section>
+    <div class="login-shell">
+      <!-- Left Column: Branding + Cards -->
+      <section class="auth-column" aria-label="Acceso al Sistema">
+        <header class="brand-header">
+          <img
+            class="brand-logo"
+            src="../assets/casacul.png"
+            alt="Casa de la Cultura de Tlaxiaco"
+          />
+        </header>
 
-    <section class="login-panel">
-      <div class="login-card">
-        <div class="welcome-icon" aria-hidden="true">
-          <svg viewBox="0 0 32 32" fill="none">
-            <circle cx="16" cy="10" r="5.5" stroke="currentColor" stroke-width="2" />
-            <path d="M6.5 27c.8-5 4-7.5 9.5-7.5s8.7 2.5 9.5 7.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-            <path d="M24 18v7M20.5 21.5H27.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-          </svg>
-        </div>
+        <!-- CARD 1: Standard Login Form -->
+        <div v-if="!authenticatedUser" class="auth-card">
+          <div class="welcome-icon" aria-hidden="true">
+            <User :size="24" />
+          </div>
 
-        <template v-if="!authenticatedUser">
           <h1>Bienvenido</h1>
-          <p class="subtitle">Inicia sesión para acceder a<br />tu espacio en la Casa de la Cultura.</p>
+          <p class="subtitle">Inicia sesión para acceder a tu espacio en la Casa de la Cultura.</p>
 
-          <form @submit.prevent="submitLogin" novalidate>
-            <label for="username">Usuario</label>
-            <div class="input-wrapper">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="12" cy="8" r="3.5" stroke="currentColor" stroke-width="1.8" />
-                <path d="M5 20c.5-3.5 2.8-5.3 7-5.3s6.5 1.8 7 5.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-              </svg>
-              <input id="username" v-model="credentials.nombreUsuario" type="text" autocomplete="username" placeholder="Ingresa tu usuario" />
+          <form @submit.prevent="submitLogin" novalidate class="auth-form">
+            <div class="field-group">
+              <label for="username">Usuario</label>
+              <div class="input-wrapper">
+                <User class="input-icon" :size="16" />
+                <input
+                  id="username"
+                  v-model="credentials.nombreUsuario"
+                  type="text"
+                  autocomplete="username"
+                  placeholder="Ingresa tu usuario"
+                />
+              </div>
             </div>
 
-            <label for="password">Contraseña</label>
-            <div class="input-wrapper">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.8" />
-                <path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-              </svg>
-              <input id="password" v-model="credentials.password" :type="showPassword ? 'text' : 'password'" autocomplete="current-password" placeholder="Ingresa tu contraseña" />
-              <button class="password-toggle" type="button" :aria-label="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'" @click="showPassword = !showPassword">
-                <svg v-if="!showPassword" viewBox="0 0 24 24" fill="none">
-                  <path d="M3 12s3.2-5 9-5 9 5 9 5-3.2 5-9 5-9-5-9-5Z" stroke="currentColor" stroke-width="1.7" />
-                  <circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.7" />
-                </svg>
-                <svg v-else viewBox="0 0 24 24" fill="none">
-                  <path d="m4 4 16 16M10.6 6.9A9.6 9.6 0 0 1 12 6.8c5.8 0 9 5.2 9 5.2a17 17 0 0 1-2.3 2.7M6.2 8.2C4.1 9.6 3 12 3 12s3.2 5.2 9 5.2c1.4 0 2.6-.3 3.7-.7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-                </svg>
-              </button>
+            <div class="field-group">
+              <label for="password">Contraseña</label>
+              <div class="input-wrapper">
+                <Lock class="input-icon" :size="16" />
+                <input
+                  id="password"
+                  v-model="credentials.password"
+                  :type="showPassword ? 'text' : 'password'"
+                  autocomplete="current-password"
+                  placeholder="Ingresa tu contraseña"
+                />
+                <button
+                  class="password-toggle"
+                  type="button"
+                  :aria-label="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+                  @click="showPassword = !showPassword"
+                >
+                  <EyeOff v-if="showPassword" :size="16" />
+                  <Eye v-else :size="16" />
+                </button>
+              </div>
             </div>
 
             <label class="remember-option">
               <input v-model="rememberSession" type="checkbox" />
-              <span>Recordar sesion</span>
+              <span>Recordar sesión</span>
             </label>
 
-            <p v-if="errorMessage" class="feedback error" role="alert">{{ errorMessage }}</p>
+            <p v-if="errorMessage" class="feedback-alert error" role="alert">
+              <AlertCircle :size="16" class="alert-svg" />
+              <span>{{ errorMessage }}</span>
+            </p>
+
             <button class="submit-button" type="submit" :disabled="isLoading">
-              {{ buttonLabel }}
-              <span aria-hidden="true">-&gt;</span>
+              <span>{{ buttonLabel }}</span>
+              <ArrowRight :size="16" class="btn-arrow" />
             </button>
           </form>
 
           <div class="help-block">
-            <span class="help-icon">?</span>
+            <span class="help-icon">
+              <HelpCircle :size="14" />
+            </span>
             <div>
               <strong>¿Problemas para iniciar sesión?</strong>
-              <p>Acude a la Casa de la Cultura para solicitar ayuda.</p>
+              <p>Acude a la Casa de la Cultura para solicitar asistencia o restablecimiento.</p>
             </div>
           </div>
-        </template>
-
-        <div v-else-if="mustChangePassword" class="success-state password-change-state">
-          <div class="success-mark">!</div>
-          <h1>Cambia tu contraseña</h1>
-          <p class="subtitle">Por seguridad, debes reemplazar la contraseña proporcionada por el supervisor.</p>
-          <form @submit.prevent="submitPasswordChange" novalidate>
-            <label for="new-password">Nueva contraseña</label>
-            <input id="new-password" v-model="newPassword" type="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres" />
-            <label for="confirm-password">Confirmar contraseña</label>
-            <input id="confirm-password" v-model="confirmPassword" type="password" autocomplete="new-password" placeholder="Repite tu contraseña" />
-            <p v-if="errorMessage" class="feedback error" role="alert">{{ errorMessage }}</p>
-            <button class="submit-button" type="submit" :disabled="isLoading">{{ isLoading ? 'GUARDANDO...' : 'GUARDAR CONTRASEÑA' }}</button>
-          </form>
-          <p class="password-help">Si olvidas esta contraseña, deberás solicitar un restablecimiento al superadministrador.</p>
         </div>
 
-        <div v-else class="success-state">
+        <!-- CARD 2: Redesigned Change Password Screen -->
+        <div v-else-if="mustChangePassword" class="auth-card change-password-card">
+          <div class="security-header-badge">
+            <div class="security-icon-box">
+              <ShieldCheck :size="24" />
+            </div>
+            <div>
+              <h2>Actualiza tu Contraseña</h2>
+              <p class="security-tagline">Primer inicio de sesión seguro</p>
+            </div>
+          </div>
+
+          <!-- User Account Identifier Pill -->
+          <div class="account-pill">
+            <div class="account-avatar">
+              <User :size="15" />
+            </div>
+            <div class="account-details">
+              <span class="account-user">{{ authenticatedUser?.nombreUsuario }}</span>
+              <span class="account-badge">{{ roleDisplay }}</span>
+            </div>
+          </div>
+
+          <p class="change-intro">
+            Por seguridad institucional, debes definir una contraseña personal que solo tú conozcas antes de acceder al portal.
+          </p>
+
+          <form @submit.prevent="submitPasswordChange" novalidate class="auth-form">
+            <!-- Field 1: Nueva Contraseña -->
+            <div class="field-group">
+              <label for="new-password">Nueva Contraseña</label>
+              <div class="input-wrapper">
+                <KeyRound class="input-icon" :size="17" />
+                <input
+                  id="new-password"
+                  v-model="newPassword"
+                  :type="showNewPassword ? 'text' : 'password'"
+                  autocomplete="new-password"
+                  placeholder="Mínimo 8 caracteres"
+                />
+                <button
+                  class="password-toggle"
+                  type="button"
+                  :aria-label="showNewPassword ? 'Ocultar contraseña' : 'Ver contraseña'"
+                  @click="showNewPassword = !showNewPassword"
+                >
+                  <EyeOff v-if="showNewPassword" :size="16" />
+                  <Eye v-else :size="16" />
+                </button>
+              </div>
+            </div>
+
+            <!-- Field 2: Confirmar Contraseña -->
+            <div class="field-group">
+              <label for="confirm-password">Confirmar Contraseña</label>
+              <div class="input-wrapper">
+                <Lock class="input-icon" :size="17" />
+                <input
+                  id="confirm-password"
+                  v-model="confirmPassword"
+                  :type="showConfirmPassword ? 'text' : 'password'"
+                  autocomplete="new-password"
+                  placeholder="Repite tu nueva contraseña"
+                />
+                <button
+                  class="password-toggle"
+                  type="button"
+                  :aria-label="showConfirmPassword ? 'Ocultar contraseña' : 'Ver contraseña'"
+                  @click="showConfirmPassword = !showConfirmPassword"
+                >
+                  <EyeOff v-if="showConfirmPassword" :size="16" />
+                  <Eye v-else :size="16" />
+                </button>
+              </div>
+            </div>
+
+            <!-- Validation Badges Checklist -->
+            <div class="criteria-list">
+              <div class="criteria-item" :class="{ valid: hasMinLength }">
+                <CheckCircle2 v-if="hasMinLength" :size="14" class="criteria-icon success" />
+                <span v-else class="criteria-bullet"></span>
+                <span>Al menos 8 caracteres</span>
+              </div>
+              <div
+                class="criteria-item"
+                :class="{ valid: passwordsMatch, invalid: passwordsMismatch }"
+              >
+                <CheckCircle2 v-if="passwordsMatch" :size="14" class="criteria-icon success" />
+                <AlertCircle v-else-if="passwordsMismatch" :size="14" class="criteria-icon danger" />
+                <span v-else class="criteria-bullet"></span>
+                <span>Las contraseñas coinciden</span>
+              </div>
+            </div>
+
+            <p v-if="errorMessage" class="feedback-alert error" role="alert">
+              <AlertCircle :size="16" class="alert-svg" />
+              <span>{{ errorMessage }}</span>
+            </p>
+
+            <button
+              class="submit-button primary-change-btn"
+              type="submit"
+              :disabled="isLoading || !canSubmitPasswordChange"
+            >
+              <span>{{ isLoading ? 'GUARDANDO CONTRASEÑA...' : 'GUARDAR Y ACCEDER AL PORTAL' }}</span>
+              <ArrowRight :size="16" class="btn-arrow" />
+            </button>
+
+            <button class="cancel-btn" type="button" @click="clearSession">
+              <LogOut :size="14" />
+              <span>Cerrar sesión / Usar otra cuenta</span>
+            </button>
+          </form>
+        </div>
+
+        <!-- CARD 3: Success state fallback -->
+        <div v-else class="auth-card success-card">
           <div class="success-mark">✓</div>
           <h1>Sesión iniciada</h1>
           <p class="subtitle">{{ successMessage }}</p>
           <p class="user-summary">{{ authenticatedUser.nombreUsuario }}</p>
-          <button class="submit-button" type="button" @click="clearSession">CERRAR SESION</button>
+          <button class="submit-button" type="button" @click="clearSession">
+            <LogOut :size="15" />
+            <span>CERRAR SESIÓN</span>
+          </button>
         </div>
-      </div>
 
-      <footer class="security-note">
-        <span class="shield-icon">♡</span>
-        <span>Tus datos de acceso son proporcionados<br />por la administración de la Casa de la Cultura.</span>
-      </footer>
-    </section>
+        <footer class="security-note">
+          <span class="shield-icon" aria-hidden="true">
+            <Heart :size="12" />
+          </span>
+          <span>Tus datos de acceso son proporcionados y gestionados por la administración de la Casa de la Cultura de Tlaxiaco.</span>
+        </footer>
+      </section>
+
+      <!-- Right Column: Institutional Historic Building Showcase (Desktop) -->
+      <section class="showcase-column" aria-hidden="true">
+        <div class="building-frame">
+          <img
+            class="building-photo"
+            src="../assets/casa_lodgo.png"
+            alt="Casa de la Cultura Heroica Ciudad de Tlaxiaco"
+          />
+          <div class="building-caption">
+            <span class="caption-title">Casa de la Cultura</span>
+            <span class="caption-city">Heroica Ciudad de Tlaxiaco, Oaxaca</span>
+          </div>
+        </div>
+      </section>
+    </div>
   </main>
 </template>
 
 <style scoped>
 .login-page {
   min-height: 100vh;
+  width: 100%;
   position: relative;
-  overflow: hidden;
-  background: #fcf7f8;
+  background: linear-gradient(135deg, #fdf8f9 0%, #f7eff1 50%, #fdf5f7 100%);
   color: #282528;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
-.brand-panel {
-  position: relative;
-  min-height: 635px;
-  height: 100vh;
+.login-shell {
+  width: 100%;
+  max-width: 1120px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 40px;
 }
 
-.brand-logo {
-  position: absolute;
-  top: 45px;
-  left: 130px;
-  width: 265px;
-  height: auto;
-  object-fit: contain;
-}
-
-.building-image {
-  position: absolute;
-  z-index: 0;
-  top: 198px;
-  right: 12px;
-  width: min(760px, 63vw);
-  max-width: none;
-  opacity: .7;
-}
-
-.login-panel {
-  position: absolute;
-  z-index: 1;
-  top: 167px;
-  left: 117px;
-  z-index: 1;
+/* Left Column */
+.auth-column {
+  width: 100%;
+  max-width: 380px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  flex-shrink: 0;
+  z-index: 2;
 }
 
-.login-card {
-  width: min(100%, 302px);
-  padding: 20px 20px 18px;
-  background: rgba(255, 255, 255, .95);
-  box-shadow: 0 10px 32px rgba(145, 70, 91, .05);
+.brand-header {
+  margin-bottom: 22px;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.brand-logo {
+  max-width: 250px;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 8px rgba(167, 13, 45, 0.08));
+}
+
+/* Main Card */
+.auth-card {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 14px;
+  padding: 24px 22px 20px;
+  box-shadow: 0 12px 36px rgba(158, 18, 50, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(240, 203, 212, 0.6);
+  box-sizing: border-box;
+  backdrop-filter: blur(8px);
 }
 
 .welcome-icon {
-  width: 49px;
-  height: 49px;
-  margin: 0 auto 7px;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 10px;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -293,149 +476,194 @@ function clearSession() {
 }
 
 .welcome-icon svg {
-  width: 29px;
-  height: 29px;
+  width: 26px;
+  height: 26px;
 }
 
 h1 {
   margin: 0;
   text-align: center;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
+  color: #201e20;
 }
 
 .subtitle {
-  margin: 3px 0 22px;
-  color: #4f4a4c;
+  margin: 4px 0 20px;
+  color: #595255;
   text-align: center;
   font-size: 12px;
   line-height: 1.45;
 }
 
-form {
+.auth-form {
   display: flex;
   flex-direction: column;
+  gap: 12px;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
 }
 
 label {
-  margin: 0 0 5px;
   color: #373235;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.2px;
 }
 
 .input-wrapper {
   position: relative;
   display: flex;
   align-items: center;
-  margin-bottom: 13px;
 }
 
-.input-wrapper > svg {
+.input-icon {
   position: absolute;
-  left: 10px;
-  width: 18px;
-  height: 18px;
+  left: 12px;
+  width: 16px !important;
+  height: 16px !important;
+  min-width: 16px !important;
+  min-height: 16px !important;
+  max-width: 16px !important;
+  max-height: 16px !important;
   color: #9e1232;
+  pointer-events: none;
+  flex-shrink: 0;
 }
 
 input[type="text"],
 input[type="password"] {
   width: 100%;
-  height: 34px;
-  padding: 0 34px 0 33px;
+  height: 38px;
+  padding: 0 36px 0 36px;
   border: 1px solid #f0cbd4;
-  border-radius: 6px;
+  border-radius: 8px;
   outline: none;
-  color: #302b2e;
-  background: #fff;
-  font-size: 11px;
+  color: #2b2528;
+  background: #ffffff;
+  font-size: 12px;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 input:focus {
   border-color: #a80f32;
-  box-shadow: 0 0 0 3px rgba(168, 15, 50, .08);
+  box-shadow: 0 0 0 3px rgba(168, 15, 50, 0.1);
 }
 
 input::placeholder {
-  color: #aaa4a6;
+  color: #b0a8aa;
 }
 
 .password-toggle {
   position: absolute;
-  right: 9px;
+  right: 10px;
   display: grid;
-  padding: 0;
+  place-items: center;
+  padding: 4px;
   border: 0;
-  color: #c696a3;
+  color: #a3828c;
   background: transparent;
   cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.15s ease;
 }
 
-.password-toggle svg {
-  width: 16px;
-  height: 16px;
+.password-toggle:hover {
+  color: #9e1232;
 }
 
 .remember-option {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin: 0 0 14px;
-  font-size: 10px;
+  gap: 8px;
+  margin: 2px 0 4px;
+  font-size: 11px;
+  color: #554e51;
   font-weight: 500;
   cursor: pointer;
 }
 
 .remember-option input {
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
   accent-color: #9e1232;
+  cursor: pointer;
 }
 
-.feedback {
-  margin: -3px 0 10px;
-  font-size: 11px;
+.feedback-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 11px;
+  border-radius: 7px;
+  font-size: 11.5px;
   line-height: 1.35;
+  margin: 2px 0;
 }
 
-.feedback.error {
-  color: #aa1735;
+.feedback-alert.error {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.alert-svg {
+  flex-shrink: 0;
 }
 
 .submit-button {
   width: 100%;
-  min-height: 33px;
+  min-height: 38px;
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 8px;
   color: white;
   background: #a70d2d;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 700;
+  letter-spacing: 0.4px;
   cursor: pointer;
-  transition: background .2s ease, transform .2s ease;
+  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 4px 12px rgba(167, 13, 45, 0.2);
+  margin-top: 4px;
 }
 
 .submit-button:hover:not(:disabled) {
   background: #880a25;
   transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(167, 13, 45, 0.28);
 }
 
 .submit-button:disabled {
-  opacity: .7;
-  cursor: wait;
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-arrow {
+  transition: transform 0.2s ease;
+}
+
+.submit-button:hover:not(:disabled) .btn-arrow {
+  transform: translateX(2px);
 }
 
 .help-block {
   display: flex;
   gap: 10px;
-  margin: 20px -20px -18px;
-  padding: 13px 20px 12px;
+  margin: 18px -22px -20px;
+  padding: 12px 22px;
   border-top: 1px solid #f7e9ed;
+  background: #fffafa;
+  border-radius: 0 0 14px 14px;
 }
 
 .help-icon {
@@ -447,29 +675,31 @@ input::placeholder {
   border-radius: 50%;
   color: #c77c91;
   background: #fff1f4;
-  font-size: 13px;
-  font-weight: 700;
 }
 
 .help-block strong {
   display: block;
-  margin: 1px 0 2px;
-  font-size: 10px;
+  margin-bottom: 2px;
+  font-size: 11px;
+  color: #3b3437;
 }
 
-.help-block p,
-.security-note {
+.help-block p {
+  margin: 0;
   color: #777074;
-  font-size: 9px;
-  line-height: 1.45;
+  font-size: 9.5px;
+  line-height: 1.4;
 }
 
 .security-note {
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: min(100%, 302px);
+  gap: 9px;
+  width: 100%;
   margin-top: 18px;
+  color: #7d7579;
+  font-size: 9.5px;
+  line-height: 1.4;
 }
 
 .shield-icon {
@@ -480,16 +710,185 @@ input::placeholder {
   border-radius: 50%;
   color: #d694a6;
   background: #fff0f3;
+  flex-shrink: 0;
 }
 
-.success-state {
-  padding: 18px 0 8px;
+/* ===================================================
+   CHANGE PASSWORD CARD STYLING
+   =================================================== */
+.change-password-card {
+  max-width: 400px;
+  padding: 24px 22px;
+}
+
+.security-header-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.security-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fde9ee 0%, #fee2e2 100%);
+  color: #a70d2d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(167, 13, 45, 0.15);
+}
+
+.security-header-badge h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e1b1d;
+  line-height: 1.2;
+}
+
+.security-tagline {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #887e82;
+  font-weight: 500;
+}
+
+.account-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #fdf2f4;
+  border: 1px solid #fbd5de;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.account-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #a70d2d;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.account-details {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.account-user {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2b2326;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-badge {
+  font-size: 10px;
+  color: #a70d2d;
+  font-weight: 600;
+}
+
+.change-intro {
+  margin: 0 0 16px;
+  font-size: 11px;
+  color: #5a5356;
+  line-height: 1.45;
+}
+
+/* Criteria checklist */
+.criteria-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 12px;
+  background: #fbfbfc;
+  border: 1px solid #f0edf0;
+  border-radius: 7px;
+  margin: 2px 0 6px;
+}
+
+.criteria-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #7b7276;
+  transition: color 0.2s ease;
+}
+
+.criteria-item.valid {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.criteria-item.invalid {
+  color: #dc2626;
+}
+
+.criteria-bullet {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d4ccd0;
+  margin: 0 4px;
+}
+
+.criteria-icon.success {
+  color: #16a34a;
+}
+
+.criteria-icon.danger {
+  color: #dc2626;
+}
+
+.primary-change-btn {
+  margin-top: 6px;
+}
+
+.cancel-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #e7d8dc;
+  border-radius: 8px;
+  background: white;
+  color: #7a6e73;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cancel-btn:hover {
+  background: #fef4f6;
+  color: #a70d2d;
+  border-color: #f0cbd4;
+}
+
+/* Success Card */
+.success-card {
   text-align: center;
+  padding: 28px 22px;
 }
 
 .success-mark {
-  width: 48px;
-  height: 48px;
+  width: 50px;
+  height: 50px;
   margin: 0 auto 12px;
   display: grid;
   place-items: center;
@@ -500,45 +899,119 @@ input::placeholder {
 }
 
 .user-summary {
-  margin: -7px 0 23px;
+  margin: -6px 0 20px;
   color: #a70d2d;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
-@media (max-width: 800px) {
-  .login-page {
-    display: block;
+/* Right Column (Historic Building Showcase) */
+.showcase-column {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.building-frame {
+  position: relative;
+  max-width: 680px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.building-photo {
+  width: 100%;
+  max-width: 580px;
+  height: auto;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+  opacity: 0.85;
+  filter: drop-shadow(0 8px 20px rgba(158, 18, 50, 0.08));
+  transition: transform 0.4s ease;
+}
+
+.building-photo:hover {
+  transform: scale(1.01);
+}
+
+.building-caption {
+  margin-top: 12px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.caption-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #4a4245;
+  letter-spacing: 0.4px;
+}
+
+.caption-city {
+  font-size: 11px;
+  color: #8a7e83;
+}
+
+/* ===================================================
+   RESPONSIVE MEDIA QUERIES (MOBILE / TABLET)
+   =================================================== */
+@media (max-width: 960px) {
+  .login-shell {
+    justify-content: center;
   }
 
-  .brand-panel {
-    min-height: 100vh;
+  .showcase-column {
+    display: none;
+  }
+
+  .auth-column {
+    max-width: 420px;
   }
 
   .brand-logo {
-    top: 25px;
-    left: 50%;
-    width: 260px;
-    transform: translateX(-50%);
+    max-width: 230px;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-page {
+    padding: 20px 14px;
   }
 
-  .building-image {
-    top: 155px;
-    right: 50%;
-    width: 620px;
-    transform: translateX(50%);
+  .auth-card {
+    padding: 20px 16px 18px;
+    border-radius: 12px;
   }
 
-  .login-panel {
-    top: 210px;
-    left: 50%;
-    width: min(302px, calc(100% - 32px));
-    transform: translateX(-50%);
+  .brand-logo {
+    max-width: 200px;
   }
 
-  .login-card,
-  .security-note {
-    width: 100%;
+  .brand-header {
+    margin-bottom: 16px;
+  }
+
+  h1 {
+    font-size: 20px;
+  }
+
+  .security-header-badge h2 {
+    font-size: 16px;
+  }
+
+  .security-icon-box {
+    width: 38px;
+    height: 38px;
+  }
+
+  .submit-button {
+    font-size: 11px;
   }
 }
 </style>

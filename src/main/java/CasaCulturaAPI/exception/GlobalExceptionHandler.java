@@ -45,4 +45,20 @@ public class GlobalExceptionHandler {
                 .body(new ApiResponse<>(false, "No tienes permisos para realizar esta operación.", null));
     }
 
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<?>> dataIntegrity(org.springframework.dao.DataIntegrityViolationException ex) {
+        String message = "Conflicto con los datos enviados: ya existe un registro asociado o un dato duplicado.";
+        String rootMsg = ex.getRootCause() != null ? ex.getRootCause().getMessage() : ex.getMessage();
+        if (rootMsg != null) {
+            if (rootMsg.contains("persona_id")) {
+                message = "La persona seleccionada ya tiene una cuenta de usuario asignada.";
+            } else if (rootMsg.contains("nombre_usuario")) {
+                message = "El nombre de usuario ya está en uso.";
+            } else if (rootMsg.contains("matricula")) {
+                message = "La matrícula ya está registrada.";
+            }
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiResponse<>(false, message, null));
+    }
+
 }

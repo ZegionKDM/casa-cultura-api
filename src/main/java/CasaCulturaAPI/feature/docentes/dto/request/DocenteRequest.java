@@ -5,11 +5,31 @@ import lombok.Data;
 
 @Data
 public class DocenteRequest {
-    @NotBlank @Size(max = 80) private String nombre;
-    @NotBlank @Size(max = 80) private String apellidoPaterno;
-    @Size(max = 80) private String apellidoMaterno;
-    @Size(max = 20) private String telefono;
-    @Size(max = 255) private String direccion;
-    @Email @Size(max = 160) private String correo;
-    @Size(max = 120) private String especialidad;
+    @NotBlank(message = "El nombre es obligatorio")
+    @Size(max = 80, message = "El nombre no debe superar 80 caracteres")
+    private String nombre;
+
+    @NotBlank(message = "El apellido paterno es obligatorio")
+    @Size(max = 80, message = "El apellido paterno no debe superar 80 caracteres")
+    private String apellidoPaterno;
+
+    @Size(max = 80, message = "El apellido materno no debe superar 80 caracteres")
+    private String apellidoMaterno;
+
+    @NotBlank(message = "El teléfono es obligatorio")
+    @Pattern(regexp = "^\\d{10}$", message = "El teléfono debe tener exactamente 10 dígitos numéricos")
+    private String telefono;
+
+    @NotBlank(message = "El domicilio / dirección es obligatorio")
+    @Size(min = 5, max = 255, message = "El domicilio debe contener al menos 5 caracteres (máximo 255)")
+    private String direccion;
+
+    @NotBlank(message = "El correo electrónico es obligatorio")
+    @Email(message = "El correo electrónico debe ser válido")
+    @Size(max = 160, message = "El correo no debe superar 160 caracteres")
+    private String correo;
+
+    @NotBlank(message = "La especialidad es obligatoria")
+    @Size(max = 120, message = "La especialidad no debe superar 120 caracteres")
+    private String especialidad;
 }

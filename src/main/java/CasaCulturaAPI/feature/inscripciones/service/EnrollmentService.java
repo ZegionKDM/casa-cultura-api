@@ -23,6 +23,8 @@ import java.util.List;
 public interface EnrollmentService {
     InscripcionResponse inscribir(InscripcionRequest request);
     List<InscripcionResponse> listarInscripciones();
+    InscripcionResponse darDeBaja(Long id);
     PagoResponse registrarPago(PagoRequest request);
     List<PagoResponse> listarPagos();
+    PagoResponse actualizarEstadoPago(Long id, CasaCulturaAPI.shared.entity.EstadoPago estado);
 }

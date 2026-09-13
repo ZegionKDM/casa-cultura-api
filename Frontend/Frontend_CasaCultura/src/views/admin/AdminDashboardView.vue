@@ -7,7 +7,9 @@ import {
   CalendarDays,
   DollarSign,
   TrendingUp,
-  AlertCircle
+  AlertCircle,
+  Clock,
+  ArrowRight
 } from 'lucide-vue-next'
 import AdminSidebar from '../../components/admin/AdminSidebar.vue'
 import AdminHeader from '../../components/admin/AdminHeader.vue'
@@ -31,7 +33,8 @@ const data = reactive({
   pagos: [],
   asistencias: [],
   usuarios: [],
-  roles: []
+  roles: [],
+  horarios: []
 })
 
 onMounted(async () => {
@@ -299,6 +302,68 @@ const recentPayments = computed(() => {
     }
   })
 })
+
+// AGENDA DE HOY
+const dayNamesEs = {
+  0: { name: 'Domingo', key: 'SUNDAY' },
+  1: { name: 'Lunes', key: 'MONDAY' },
+  2: { name: 'Martes', key: 'TUESDAY' },
+  3: { name: 'Miércoles', key: 'WEDNESDAY' },
+  4: { name: 'Jueves', key: 'THURSDAY' },
+  5: { name: 'Viernes', key: 'FRIDAY' },
+  6: { name: 'Sábado', key: 'SATURDAY' }
+}
+
+const todayInfo = computed(() => {
+  const now = new Date()
+  const d = dayNamesEs[now.getDay()]
+  const dateFormatted = now.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })
+  return {
+    dayName: d.name,
+    dayKey: d.key,
+    fullDate: `${d.name}, ${dateFormatted}`
+  }
+})
+
+const todaySchedules = computed(() => {
+  const currentKey = todayInfo.value.dayKey
+  const now = new Date()
+  const curMinutes = now.getHours() * 60 + now.getMinutes()
+
+  return (data.horarios || [])
+    .filter(h => String(h.dia).toUpperCase() === currentKey)
+    .map(h => {
+      const g = data.grupos.find(grp => grp.id === h.grupoId) || {}
+      const oferta = data.ofertas.find(o => o.id === g.ofertaId) || {}
+      const curso = data.cursos.find(c => c.id === oferta.cursoId) || {}
+
+      let status = 'upcoming'
+      let statusLabel = 'Próxima'
+      if (h.horaInicio && h.horaFin) {
+        const [sh, sm] = String(h.horaInicio).split(':').map(Number)
+        const [eh, em] = String(h.horaFin).split(':').map(Number)
+        const startMins = sh * 60 + (sm || 0)
+        const endMins = eh * 60 + (em || 0)
+        if (curMinutes >= startMins && curMinutes <= endMins) {
+          status = 'active'
+          statusLabel = 'En curso'
+        } else if (curMinutes > endMins) {
+          status = 'finished'
+          statusLabel = 'Concluida'
+        }
+      }
+
+      return {
+        id: h.id,
+        nombreCurso: curso.nombre || h.nombre || 'Taller Cultural',
+        nombreGrupo: g.nombreGrupo || h.nombreGrupo || 'Grupo',
+        horario: `${String(h.horaInicio).substring(0, 5)} - ${String(h.horaFin).substring(0, 5)}`,
+        status,
+        statusLabel
+      }
+    })
+    .sort((a, b) => a.horario.localeCompare(b.horario))
+})
 </script>
 
 <template>
@@ -553,6 +618,57 @@ const recentPayments = computed(() => {
           </div>
         </section>
 
+        <!-- HORARIOS Y AGENDA DEL DÍA -->
+        <section class="today-schedules-section">
+          <div class="panel today-schedules-panel">
+            <div class="panel-header">
+              <div class="header-with-badge">
+                <div class="agenda-icon-wrap">
+                  <CalendarDays :size="20" />
+                </div>
+                <div>
+                  <div class="agenda-title-row">
+                    <h3>Horarios y Talleres de Hoy</h3>
+                    <span class="day-pill-active">{{ todayInfo.dayName }}</span>
+                  </div>
+                  <p>{{ todayInfo.fullDate }} · {{ todaySchedules.length ? `${todaySchedules.length} clases programadas para hoy` : 'Sin clases para hoy' }}</p>
+                </div>
+              </div>
+
+              <RouterLink to="/admin/horarios" class="view-all-schedules-link">
+                Ver Programación Semanal
+                <ArrowRight :size="15" />
+              </RouterLink>
+            </div>
+
+            <div v-if="todaySchedules.length" class="today-schedules-cards">
+              <div
+                v-for="item in todaySchedules"
+                :key="item.id"
+                class="today-card"
+                :class="item.status"
+              >
+                <div class="card-time-row">
+                  <Clock :size="13" />
+                  <strong>{{ item.horario }}</strong>
+                  <span class="status-pill" :class="item.status">
+                    {{ item.statusLabel }}
+                  </span>
+                </div>
+                <div class="card-course-title">{{ item.nombreCurso }}</div>
+                <div class="card-group-subtitle">{{ item.nombreGrupo }}</div>
+              </div>
+            </div>
+
+            <div v-else class="empty-state-mini">
+              <p>No hay talleres con clases programadas para el día de hoy ({{ todayInfo.dayName }}).</p>
+              <RouterLink to="/admin/horarios" class="action-link-mini">
+                + Ir al gestor de horarios para programar sesiones
+              </RouterLink>
+            </div>
+          </div>
+        </section>
+
         <!-- TABLAS Y TOP TALLERES -->
         <section class="bottom-grid">
           <div class="panel">
@@ -603,41 +719,43 @@ const recentPayments = computed(() => {
               </div>
             </div>
 
-            <table v-if="recentPayments.length">
-              <thead>
-                <tr>
-                  <th>Alumno</th>
-                  <th>Taller</th>
-                  <th>Fecha</th>
-                  <th>Monto</th>
-                  <th>Estado</th>
-                </tr>
-              </thead>
+            <div v-if="recentPayments.length" class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Alumno</th>
+                    <th>Taller</th>
+                    <th>Fecha</th>
+                    <th>Monto</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
 
-              <tbody>
-                <tr
-                  v-for="pago in recentPayments"
-                  :key="pago.id"
-                >
-                  <td><strong>{{ pago.alumno }}</strong></td>
-                  <td>{{ pago.taller }}</td>
-                  <td>{{ pago.fecha }}</td>
-                  <td>{{ pago.monto }}</td>
-                  <td>
-                    <span
-                      class="status"
-                      :class="{
-                        paid: pago.estado === 'PAGADO',
-                        pending: pago.estado === 'PENDIENTE',
-                        overdue: pago.estado === 'VENCIDO'
-                      }"
-                    >
-                      {{ pago.estado }}
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                <tbody>
+                  <tr
+                    v-for="pago in recentPayments"
+                    :key="pago.id"
+                  >
+                    <td><strong>{{ pago.alumno }}</strong></td>
+                    <td>{{ pago.taller }}</td>
+                    <td>{{ pago.fecha }}</td>
+                    <td>{{ pago.monto }}</td>
+                    <td>
+                      <span
+                        class="status"
+                        :class="{
+                          paid: pago.estado === 'PAGADO',
+                          pending: pago.estado === 'PENDIENTE',
+                          overdue: pago.estado === 'VENCIDO'
+                        }"
+                      >
+                        {{ pago.estado }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
             <div
               v-else
@@ -1073,7 +1191,13 @@ td {
 }
 
 /* RESPONSIVE */
-@media (max-width: 1500px) {
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 1400px) {
   .stats-grid {
     grid-template-columns: repeat(3, 1fr);
   }
@@ -1087,9 +1211,23 @@ td {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 1080px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .recurrent-panel {
+    grid-column: auto;
+  }
+
+  .bottom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 840px) {
   .dashboard-content {
-    padding: 20px 15px 30px;
+    padding: 20px 16px 28px;
   }
 
   .page-title {
@@ -1099,22 +1237,217 @@ td {
     margin-bottom: 20px;
   }
 
-  .stats-grid,
-  .charts-grid,
-  .bottom-grid {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+}
+
+@media (max-width: 600px) {
+  .dashboard-content {
+    padding: 16px 12px 24px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .panel {
+    padding: 16px 14px;
+    border-radius: 12px;
+  }
+
+  .panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .header-with-badge {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .view-all-schedules-link {
+    width: 100%;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+
+  .today-schedules-cards {
     grid-template-columns: 1fr;
   }
 
-  .recurrent-panel {
-    grid-column: auto;
-  }
-
-  .payments-panel {
+  .bar-chart {
     overflow-x: auto;
+    padding-bottom: 12px;
+    justify-content: flex-start;
   }
 
-  .payments-panel table {
-    min-width: 580px;
+  .bar-column {
+    min-width: 55px;
+    flex: 0 0 55px;
   }
+
+  .table-responsive table {
+    min-width: 540px;
+  }
+}
+
+/* TODAY SCHEDULES SECTION */
+.today-schedules-section {
+  margin-bottom: 22px;
+}
+
+.header-with-badge {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.agenda-icon-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #3b82f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.agenda-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.day-pill-active {
+  font-size: 11px;
+  font-weight: 800;
+  background: #dbeafe;
+  color: #1d4ed8;
+  padding: 2px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.view-all-schedules-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4051a3;
+  text-decoration: none;
+  background: #eef2ff;
+  padding: 8px 14px;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.view-all-schedules-link:hover {
+  background: #4051a3;
+  color: #ffffff;
+}
+
+.today-schedules-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
+  margin-top: 6px;
+}
+
+.today-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #3b82f6;
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.today-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  background: #ffffff;
+}
+
+.today-card.active {
+  border-left-color: #10b981;
+  background: #f0fdf4;
+}
+
+.today-card.finished {
+  border-left-color: #94a3b8;
+  opacity: 0.75;
+}
+
+.card-time-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #1e293b;
+  margin-bottom: 2px;
+}
+
+.card-time-row strong {
+  font-weight: 700;
+}
+
+.status-pill {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.status-pill.active {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-pill.upcoming {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.status-pill.finished {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.card-course-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.card-group-subtitle {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.action-link-mini {
+  display: inline-block;
+  margin-top: 8px;
+  color: #4051a3;
+  font-weight: 600;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.action-link-mini:hover {
+  text-decoration: underline;
 }
 </style>

@@ -25,7 +25,9 @@ public interface CatalogService {
     CatalogResponse actualizarGrupo(Long id, GrupoRequest request);
     List<CatalogResponse> listarGrupos();
     CatalogResponse crearHorario(HorarioRequest request);
+    List<CatalogResponse> crearHorariosBatch(HorarioBatchRequest request);
     CatalogResponse actualizarHorario(Long id, HorarioRequest request);
     List<CatalogResponse> listarHorarios(Long grupoId);
     List<CatalogResponse> listarTodosHorarios();
+    void eliminarHorario(Long id);
 }

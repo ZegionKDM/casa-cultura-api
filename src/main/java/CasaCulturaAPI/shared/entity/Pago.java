@@ -22,4 +22,5 @@ public class Pago extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private EstadoPago estado;
+    private Double monto;
 }

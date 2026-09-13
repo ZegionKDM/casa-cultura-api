@@ -9,4 +9,7 @@ import java.util.List;
 
 public interface PagoRepository extends JpaRepository<Pago, Long> {
     List<Pago> findByInscripcionIn(Collection<Inscripcion> inscripciones);
+    List<Pago> findByEstado(CasaCulturaAPI.shared.entity.EstadoPago estado);
+    List<Pago> findByEstadoAndFechaVencimientoBetween(CasaCulturaAPI.shared.entity.EstadoPago estado, java.time.LocalDate inicio, java.time.LocalDate fin);
+    List<Pago> findByEstadoAndFechaVencimientoLessThanEqual(CasaCulturaAPI.shared.entity.EstadoPago estado, java.time.LocalDate fecha);
 }

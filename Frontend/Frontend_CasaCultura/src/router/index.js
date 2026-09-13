@@ -208,6 +208,10 @@ router.beforeEach((to) => {
     return '/'
   }
 
+  if (user?.debeCambiarPassword && to.path !== '/') {
+    return '/'
+  }
+
   if (to.path === '/alumno' && role !== 'ALUMNO') {
     return role === 'SUPERVISOR' ? '/supervisor' : role === 'SUPER_ADMIN' ? '/admin/dashboard' : '/'
   }

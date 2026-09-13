@@ -30,6 +30,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.DayOfWeek;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -48,7 +50,8 @@ public class CatalogServiceImpl implements CatalogService {
     }
     @Override @Transactional
     public CatalogResponse actualizarCurso(Long id, CursoRequest request) {
-        Curso curso = cursoRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Curso no encontrado."));
+        Curso curso = cursoRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Curso no encontrado."));
         if (!curso.getNombre().equalsIgnoreCase(request.getNombre())
                 && cursoRepository.existsByNombreIgnoreCase(request.getNombre())) {
             throw new IllegalArgumentException("El curso ya existe.");
@@ -127,6 +130,74 @@ public class CatalogServiceImpl implements CatalogService {
                 .horaInicio(request.getHoraInicio()).horaFin(request.getHoraFin()).build()));
     }
     @Override @Transactional
+    public List<CatalogResponse> crearHorariosBatch(HorarioBatchRequest request) {
+        Grupo grupo = grupoRepository.findById(request.getGrupoId())
+                .orElseThrow(() -> new ResourceNotFoundException("Grupo no encontrado."));
+
+        List<HorarioSlotRequest> effectiveSlots = new ArrayList<>();
+        if (request.getSlots() != null && !request.getSlots().isEmpty()) {
+            effectiveSlots.addAll(request.getSlots());
+        }
+        if (request.getDias() != null && !request.getDias().isEmpty()
+                && request.getHoraInicio() != null && request.getHoraFin() != null) {
+            effectiveSlots.add(new HorarioSlotRequest(request.getDias(), request.getHoraInicio(), request.getHoraFin()));
+        }
+
+        if (effectiveSlots.isEmpty()) {
+            throw new IllegalArgumentException("Debe especificar al menos un día y horario.");
+        }
+
+        List<Horario> horariosExistentes = horarioRepository.findByGrupoId(grupo.getId());
+        List<Horario> nuevosParaGuardar = new ArrayList<>();
+
+        for (HorarioSlotRequest slot : effectiveSlots) {
+            if (!slot.getHoraInicio().isBefore(slot.getHoraFin())) {
+                throw new IllegalArgumentException(String.format(
+                        "La hora de inicio (%s) debe ser anterior a la hora de fin (%s).",
+                        slot.getHoraInicio(), slot.getHoraFin()
+                ));
+            }
+            if (slot.getDias() == null || slot.getDias().isEmpty()) {
+                throw new IllegalArgumentException("Cada bloque debe tener al menos un día seleccionado.");
+            }
+
+            for (DayOfWeek dia : slot.getDias()) {
+                boolean overlap = horariosExistentes.stream().anyMatch(h ->
+                        h.getDia().equals(dia) &&
+                        slot.getHoraInicio().isBefore(h.getHoraFin()) &&
+                        slot.getHoraFin().isAfter(h.getHoraInicio())
+                );
+                if (overlap) {
+                    throw new IllegalArgumentException(String.format(
+                            "El taller ya cuenta con un horario el día %s que se empalma con %s - %s.",
+                            dia, slot.getHoraInicio(), slot.getHoraFin()
+                    ));
+                }
+
+                boolean internalOverlap = nuevosParaGuardar.stream().anyMatch(h ->
+                        h.getDia().equals(dia) &&
+                        slot.getHoraInicio().isBefore(h.getHoraFin()) &&
+                        slot.getHoraFin().isAfter(h.getHoraInicio())
+                );
+                if (internalOverlap) {
+                    throw new IllegalArgumentException(String.format(
+                            "Conflicto interno: se especificó más de un horario simultáneo para el día %s.",
+                            dia
+                    ));
+                }
+
+                nuevosParaGuardar.add(Horario.builder()
+                        .grupo(grupo)
+                        .dia(dia)
+                        .horaInicio(slot.getHoraInicio())
+                        .horaFin(slot.getHoraFin())
+                        .build());
+            }
+        }
+
+        return horarioRepository.saveAll(nuevosParaGuardar).stream().map(this::horario).toList();
+    }
+    @Override @Transactional
     public CatalogResponse actualizarHorario(Long id, HorarioRequest request) {
         if (!request.getHoraInicio().isBefore(request.getHoraFin())) {
             throw new IllegalArgumentException("La hora de inicio debe ser anterior a la hora de fin.");
@@ -145,6 +216,12 @@ public class CatalogServiceImpl implements CatalogService {
     public List<CatalogResponse> listarHorarios(Long grupoId) { return horarioRepository.findByGrupoId(grupoId).stream().map(this::horario).toList(); }
     @Override @Transactional(readOnly = true)
     public List<CatalogResponse> listarTodosHorarios() { return horarioRepository.findAll().stream().map(this::horario).toList(); }
+    @Override @Transactional
+    public void eliminarHorario(Long id) {
+        Horario horario = horarioRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Horario no encontrado."));
+        horarioRepository.delete(horario);
+    }
 
     private void validateOfferDates(OfertaCursoRequest request) {
         if (!request.getFechaInicio().isBefore(request.getFechaFin())) {
@@ -156,5 +233,22 @@ public class CatalogServiceImpl implements CatalogService {
     private CatalogResponse categoria(CategoriaEdad x) { return CatalogResponse.builder().id(x.getId()).nombre(x.getNombre()).build(); }
     private CatalogResponse oferta(OfertaCurso x) { return CatalogResponse.builder().id(x.getId()).cursoId(x.getCurso().getId()).tipo(x.getTipo()).fechaInicio(x.getFechaInicio()).fechaFin(x.getFechaFin()).build(); }
     private CatalogResponse grupo(Grupo x) { return CatalogResponse.builder().id(x.getId()).ofertaId(x.getOferta().getId()).categoriaId(x.getCategoria().getId()).nombreGrupo(x.getNombreGrupo()).build(); }
-    private CatalogResponse horario(Horario x) { return CatalogResponse.builder().id(x.getId()).grupoId(x.getGrupo().getId()).dia(x.getDia()).horaInicio(x.getHoraInicio()).horaFin(x.getHoraFin()).build(); }
+    private CatalogResponse horario(Horario x) {
+        String cursoNombre = null;
+        Long cursoId = null;
+        if (x.getGrupo() != null && x.getGrupo().getOferta() != null && x.getGrupo().getOferta().getCurso() != null) {
+            cursoNombre = x.getGrupo().getOferta().getCurso().getNombre();
+            cursoId = x.getGrupo().getOferta().getCurso().getId();
+        }
+        return CatalogResponse.builder()
+                .id(x.getId())
+                .grupoId(x.getGrupo().getId())
+                .nombreGrupo(x.getGrupo().getNombreGrupo())
+                .cursoId(cursoId)
+                .nombre(cursoNombre)
+                .dia(x.getDia())
+                .horaInicio(x.getHoraInicio())
+                .horaFin(x.getHoraFin())
+                .build();
+    }
 }

@@ -25,4 +25,8 @@ public class Usuario extends BaseEntity {
     @Column(nullable = false, length = 20)
     @Builder.Default
     private EstadoRegistro estado = EstadoRegistro.ACTIVO;
+
+    @Column(name = "debe_cambiar_password", nullable = false)
+    @Builder.Default
+    private Boolean debeCambiarPassword = false;
 }

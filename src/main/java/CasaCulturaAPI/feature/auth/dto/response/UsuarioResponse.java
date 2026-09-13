@@ -12,4 +12,5 @@ public class UsuarioResponse {
     private String rol;
     private String nombreUsuario;
     private EstadoRegistro estado;
+    private Boolean debeCambiarPassword;
 }

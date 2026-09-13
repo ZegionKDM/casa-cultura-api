@@ -9,5 +9,4 @@ class CasaCulturaApiApplicationTests {
 	@Test
 	void contextLoads() {
 	}
-
 }

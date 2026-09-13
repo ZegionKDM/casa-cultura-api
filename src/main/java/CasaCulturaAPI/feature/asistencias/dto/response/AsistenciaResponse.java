@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 @Builder
 public class AsistenciaResponse {
     private Long id;
+    private String fotoUrl;
     private String matricula;
     private String alumno;
     private String grupo;

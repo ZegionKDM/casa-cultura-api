@@ -11,5 +11,6 @@ import java.util.List;
 public interface HorarioRepository extends JpaRepository<Horario, Long> {
     List<Horario> findByGrupoAndDiaAndHoraInicioLessThanEqualAndHoraFinGreaterThan(Grupo grupo, DayOfWeek dia, LocalTime hora, LocalTime inicio);
     List<Horario> findByGrupoId(Long grupoId);
+    List<Horario> findByGrupoIn(java.util.Collection<Grupo> grupos);
     List<Horario> findByDiaAndHoraFinLessThanEqual(DayOfWeek dia, LocalTime horaFin);
 }

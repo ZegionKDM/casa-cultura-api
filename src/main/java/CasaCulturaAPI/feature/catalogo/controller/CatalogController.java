@@ -70,6 +70,11 @@ public class CatalogController {
     @PostMapping("/horarios")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
     public ResponseEntity<ApiResponse<?>> crearHorario(@Valid @RequestBody HorarioRequest request) { return created(service.crearHorario(request)); }
+    @PostMapping("/horarios/batch")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    public ResponseEntity<ApiResponse<?>> crearHorariosBatch(@Valid @RequestBody HorarioBatchRequest request) {
+        return created(service.crearHorariosBatch(request));
+    }
     @PutMapping("/horarios/{id}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
     public ResponseEntity<ApiResponse<?>> actualizarHorario(@PathVariable Long id, @Valid @RequestBody HorarioRequest request) {
@@ -81,6 +86,12 @@ public class CatalogController {
     @GetMapping("/grupos/{grupoId}/horarios")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'DOCENTE', 'SUPERVISOR')")
     public ResponseEntity<ApiResponse<?>> listarHorarios(@PathVariable Long grupoId) { return ok(service.listarHorarios(grupoId)); }
+    @DeleteMapping("/horarios/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    public ResponseEntity<ApiResponse<?>> eliminarHorario(@PathVariable Long id) {
+        service.eliminarHorario(id);
+        return ok("Horario eliminado correctamente.");
+    }
 
     private ResponseEntity<ApiResponse<?>> created(Object data) { return ResponseEntity.status(HttpStatus.CREATED).body(new ApiResponse<>(true, "Registro creado correctamente.", data)); }
     private ResponseEntity<ApiResponse<?>> ok(Object data) { return ResponseEntity.ok(new ApiResponse<>(true, "Consulta realizada correctamente.", data)); }

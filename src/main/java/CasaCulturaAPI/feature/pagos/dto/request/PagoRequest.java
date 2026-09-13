@@ -15,4 +15,5 @@ public class PagoRequest {
     private LocalDate fechaVencimiento;
     private LocalDate fechaPago;
     @NotNull private EstadoPago estado;
+    private Double monto;
 }

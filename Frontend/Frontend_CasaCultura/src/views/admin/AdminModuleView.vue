@@ -36,7 +36,12 @@ import {
   FolderPlus,
   Tag,
   Calendar,
-  Sparkles
+  Sparkles,
+  List,
+  XCircle,
+  DollarSign,
+  AlertTriangle,
+  Mail
 } from 'lucide-vue-next'
 
 import AdminSidebar from '../../components/admin/AdminSidebar.vue'
@@ -58,8 +63,12 @@ import {
   createOffer,
   createGroup,
   createSchedule,
+  createSchedulesBatch,
+  deleteSchedule,
   createEnrollment,
+  deactivateEnrollment,
   createPayment,
+  updatePaymentStatus,
   createUser,
   deactivateUser,
   resetUserPassword,
@@ -175,28 +184,33 @@ const personTypeFilter = ref('ALL') // 'ALL' | 'ALUMNO' | 'DOCENTE'
 const selectedPerson = ref(null)
 
 const allPersons = computed(() => {
+  const existingUserPersonaIds = new Set((data.usuarios || []).map(u => Number(u.personaId)))
   const list = []
   data.alumnos.forEach(a => {
+    const pId = Number(a.personaId || a.persona?.id || a.id)
     list.push({
-      id: a.id,
+      id: pId,
       tipo: 'ALUMNO',
       nombreCompleto: `${a.nombre} ${a.apellidoPaterno} ${a.apellidoMaterno || ''}`.trim(),
       detalle: `Matrícula: ${a.matricula}`,
       correo: a.correo || 'Sin correo',
       telefono: a.telefono || '',
       matricula: a.matricula,
+      hasUser: existingUserPersonaIds.has(pId),
       raw: a
     })
   })
   data.docentes.forEach(d => {
+    const pId = Number(d.personaId || d.persona?.id || d.id)
     list.push({
-      id: d.id,
+      id: pId,
       tipo: 'DOCENTE',
       nombreCompleto: `${d.nombre} ${d.apellidoPaterno} ${d.apellidoMaterno || ''}`.trim(),
       detalle: `Especialidad: ${d.especialidad || 'General'}`,
       correo: d.correo || 'Sin correo',
       telefono: d.telefono || '',
       especialidad: d.especialidad,
+      hasUser: existingUserPersonaIds.has(pId),
       raw: d
     })
   })
@@ -204,7 +218,7 @@ const allPersons = computed(() => {
 })
 
 const filteredPersons = computed(() => {
-  let list = allPersons.value
+  let list = allPersons.value.filter(p => !p.hasUser)
   if (personTypeFilter.value !== 'ALL') {
     list = list.filter(p => p.tipo === personTypeFilter.value)
   }
@@ -242,6 +256,38 @@ function selectPersonForUser(p) {
 function clearSelectedPerson() {
   selectedPerson.value = null
   formUser.personaId = ''
+}
+
+const userCreationType = ref('admin') // 'admin' | 'existing'
+const formAdminPerson = reactive({
+  nombre: '',
+  apellidoPaterno: '',
+  apellidoMaterno: '',
+  correo: '',
+  telefono: ''
+})
+
+function setUserCreationType(type) {
+  userCreationType.value = type
+  errors.value = {}
+  if (type === 'admin') {
+    selectedPerson.value = null
+    formUser.personaId = ''
+    if (!formUser.rolId) {
+      const supRole = data.roles.find(r => r.nombre.toUpperCase().includes('SUPERVISOR'))
+      if (supRole) formUser.rolId = supRole.id
+    }
+  } else {
+    formUser.rolId = ''
+  }
+}
+
+function onAdminPersonNameInput() {
+  if (formAdminPerson.nombre && formAdminPerson.apellidoPaterno && (!formUser.nombreUsuario || formUser.nombreUsuario.includes('.'))) {
+    const p1 = formAdminPerson.nombre.trim().toLowerCase().split(' ')[0]
+    const p2 = formAdminPerson.apellidoPaterno.trim().toLowerCase()
+    formUser.nombreUsuario = `${p1}.${p2}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9.]/g, '')
+  }
 }
 
 // ----------------------------------------------------
@@ -378,6 +424,314 @@ const workshopStats = computed(() => {
   return { totalCourses, totalGroups, assignedTeachersCount, totalStudents }
 })
 
+// ==========================================
+// SCHEDULES (HORARIOS) EXPERIENCE STATE & COMPUTEDS
+// ==========================================
+const scheduleViewMode = ref('calendar') // 'calendar' | 'groups' | 'list'
+const scheduleDayFilter = ref('ALL') // 'ALL' | 'MONDAY' | 'TUESDAY' | ...
+const scheduleCourseFilter = ref('ALL') // 'ALL' | courseId
+
+const weekDays = [
+  { key: 'MONDAY', name: 'Lunes', short: 'LUN' },
+  { key: 'TUESDAY', name: 'Martes', short: 'MAR' },
+  { key: 'WEDNESDAY', name: 'Miércoles', short: 'MIÉ' },
+  { key: 'THURSDAY', name: 'Jueves', short: 'JUE' },
+  { key: 'FRIDAY', name: 'Viernes', short: 'VIE' },
+  { key: 'SATURDAY', name: 'Sábado', short: 'SÁB' },
+  { key: 'SUNDAY', name: 'Domingo', short: 'DOM' }
+]
+
+const enrichedSchedules = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  const dayFilter = scheduleDayFilter.value
+  const courseFilter = scheduleCourseFilter.value
+
+  return (data.horarios || []).map(h => {
+    const grupo = data.grupos.find(g => g.id === h.grupoId) || {}
+    const oferta = data.ofertas.find(o => o.id === grupo.ofertaId) || {}
+    const curso = data.cursos.find(c => c.id === oferta.cursoId) || {}
+    const categoria = data.categorias.find(cat => cat.id === grupo.categoriaId) || {}
+
+    let docenteName = 'Sin docente asignado'
+    const asignacion = (data.asignacionesDocentes || []).find(a => a.grupoId === grupo.id)
+    if (asignacion) {
+      const d = data.docentes.find(doc => doc.id === asignacion.docenteId)
+      if (d) docenteName = `${d.nombre} ${d.apellidoPaterno || ''}`
+      else if (asignacion.docente) docenteName = asignacion.docente
+    }
+
+    let durationText = ''
+    let durationMinutes = 0
+    if (h.horaInicio && h.horaFin) {
+      const [sh, sm] = String(h.horaInicio).split(':').map(Number)
+      const [eh, em] = String(h.horaFin).split(':').map(Number)
+      const diffMins = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0))
+      if (diffMins > 0) {
+        durationMinutes = diffMins
+        const hours = Math.floor(diffMins / 60)
+        const mins = diffMins % 60
+        durationText = hours > 0 ? (mins > 0 ? `${hours}h ${mins}m` : `${hours}h`) : `${mins}m`
+      }
+    }
+
+    const colors = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#3b82f6', '#14b8a6']
+    const colorIndex = (curso.id || h.grupoId || h.id || 0) % colors.length
+    const themeColor = colors[colorIndex]
+
+    return {
+      ...h,
+      grupo,
+      nombreGrupo: grupo.nombreGrupo || h.nombreGrupo || 'Grupo Cultural',
+      curso,
+      cursoId: curso.id,
+      nombreCurso: curso.nombre || h.nombre || 'Taller Cultural',
+      categoriaNombre: categoria.nombre || 'General',
+      docenteName,
+      diaTexto: formatDay(h.dia),
+      diaKey: String(h.dia).toUpperCase(),
+      horaInicioFormateada: formatTime(h.horaInicio),
+      horaFinFormateada: formatTime(h.horaFin),
+      rangoHorario: `${formatTime(h.horaInicio)} - ${formatTime(h.horaFin)}`,
+      durationText,
+      durationMinutes,
+      themeColor
+    }
+  }).filter(item => {
+    if (dayFilter !== 'ALL' && item.diaKey !== dayFilter) return false
+    if (courseFilter !== 'ALL' && String(item.cursoId) !== String(courseFilter)) return false
+    if (q) {
+      return item.nombreCurso.toLowerCase().includes(q) ||
+             item.nombreGrupo.toLowerCase().includes(q) ||
+             item.docenteName.toLowerCase().includes(q) ||
+             item.diaTexto.toLowerCase().includes(q) ||
+             item.rangoHorario.includes(q)
+    }
+    return true
+  }).sort((a, b) => (a.horaInicio || '').localeCompare(b.horaInicio || ''))
+})
+
+const scheduleStats = computed(() => {
+  const all = data.horarios || []
+  const groupIdsWithSched = new Set(all.map(h => h.grupoId))
+
+  let totalMinutes = 0
+  const dayCounts = {}
+  all.forEach(h => {
+    const dKey = String(h.dia).toUpperCase()
+    dayCounts[dKey] = (dayCounts[dKey] || 0) + 1
+    if (h.horaInicio && h.horaFin) {
+      const [sh, sm] = String(h.horaInicio).split(':').map(Number)
+      const [eh, em] = String(h.horaFin).split(':').map(Number)
+      const diff = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0))
+      if (diff > 0) totalMinutes += diff
+    }
+  })
+
+  let peakDayKey = ''
+  let peakCount = 0
+  for (const [day, count] of Object.entries(dayCounts)) {
+    if (count > peakCount) {
+      peakCount = count
+      peakDayKey = day
+    }
+  }
+
+  const peakDayName = peakDayKey ? `${formatDay(peakDayKey)} (${peakCount} clases)` : 'Sin clases'
+  const totalHours = (totalMinutes / 60).toFixed(1).replace('.0', '')
+
+  return {
+    totalSessions: all.length,
+    groupsWithSchedule: groupIdsWithSched.size,
+    totalGroups: data.grupos.length,
+    totalHours,
+    peakDay: peakDayName
+  }
+})
+
+const schedulesByDay = computed(() => {
+  const todayDayNumber = new Date().getDay()
+  const dayMapJS = { 1: 'MONDAY', 2: 'TUESDAY', 3: 'WEDNESDAY', 4: 'THURSDAY', 5: 'FRIDAY', 6: 'SATURDAY', 0: 'SUNDAY' }
+  const todayKey = dayMapJS[todayDayNumber]
+
+  const activeDays = scheduleDayFilter.value === 'ALL'
+    ? weekDays
+    : weekDays.filter(wd => wd.key === scheduleDayFilter.value)
+
+  return activeDays.map(wd => {
+    const sessions = enrichedSchedules.value.filter(s => s.diaKey === wd.key)
+    return {
+      ...wd,
+      isToday: wd.key === todayKey,
+      sessions,
+      totalSessions: sessions.length
+    }
+  })
+})
+
+const schedulesByGroup = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  const courseFilter = scheduleCourseFilter.value
+
+  return data.grupos.map(g => {
+    const oferta = data.ofertas.find(o => o.id === g.ofertaId) || {}
+    const curso = data.cursos.find(c => c.id === oferta.cursoId) || {}
+    const categoria = data.categorias.find(cat => cat.id === g.categoriaId) || {}
+
+    const groupSchedules = (data.horarios || []).filter(h => h.grupoId === g.id).map(h => ({
+      ...h,
+      diaTexto: formatDay(h.dia),
+      diaKey: String(h.dia).toUpperCase(),
+      horaInicioFormateada: formatTime(h.horaInicio),
+      horaFinFormateada: formatTime(h.horaFin),
+      rangoHorario: `${formatTime(h.horaInicio)} - ${formatTime(h.horaFin)}`
+    })).sort((a, b) => {
+      const order = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
+      return order.indexOf(a.diaKey) - order.indexOf(b.diaKey)
+    })
+
+    let totalMinutes = 0
+    groupSchedules.forEach(h => {
+      if (h.horaInicio && h.horaFin) {
+        const [sh, sm] = String(h.horaInicio).split(':').map(Number)
+        const [eh, em] = String(h.horaFin).split(':').map(Number)
+        const diff = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0))
+        if (diff > 0) totalMinutes += diff
+      }
+    })
+    const totalHours = (totalMinutes / 60).toFixed(1).replace('.0', '')
+
+    let docenteName = 'Sin docente asignado'
+    const asignacion = (data.asignacionesDocentes || []).find(a => a.grupoId === g.id)
+    if (asignacion) {
+      const d = data.docentes.find(doc => doc.id === asignacion.docenteId)
+      if (d) docenteName = `${d.nombre} ${d.apellidoPaterno || ''}`
+      else if (asignacion.docente) docenteName = asignacion.docente
+    }
+
+    const inscritos = (data.inscripciones || []).filter(i => i.grupoId === g.id).length
+
+    return {
+      ...g,
+      cursoId: curso.id,
+      cursoNombre: curso.nombre || 'Taller Cultural',
+      categoriaNombre: categoria.nombre || 'General',
+      docenteName,
+      totalInscritos: inscritos,
+      horarios: groupSchedules,
+      totalSesiones: groupSchedules.length,
+      totalHours
+    }
+  }).filter(g => {
+    if (courseFilter !== 'ALL' && String(g.cursoId) !== String(courseFilter)) return false
+    if (q) {
+      return (g.nombreGrupo && g.nombreGrupo.toLowerCase().includes(q)) ||
+             (g.cursoNombre && g.cursoNombre.toLowerCase().includes(q)) ||
+             (g.docenteName && g.docenteName.toLowerCase().includes(q))
+    }
+    return true
+  })
+})
+
+async function handleDeleteSchedule(scheduleId, desc = '') {
+  if (!confirm(`¿Estás seguro de eliminar este horario ${desc ? `"${desc}"` : ''}?`)) {
+    return
+  }
+  isSaving.value = true
+  try {
+    await deleteSchedule(scheduleId)
+    showToast('Horario eliminado exitosamente.')
+    await loadAllData()
+  } catch (err) {
+    showToast(err.message || 'Error al eliminar el horario.', 'error')
+  } finally {
+    isSaving.value = false
+  }
+}
+
+const weekDaysList = [
+  { key: 'MONDAY', label: 'Lunes', short: 'Lun' },
+  { key: 'TUESDAY', label: 'Martes', short: 'Mar' },
+  { key: 'WEDNESDAY', label: 'Miércoles', short: 'Mié' },
+  { key: 'THURSDAY', label: 'Jueves', short: 'Jue' },
+  { key: 'FRIDAY', label: 'Viernes', short: 'Vie' },
+  { key: 'SATURDAY', label: 'Sábado', short: 'Sáb' },
+  { key: 'SUNDAY', label: 'Domingo', short: 'Dom' }
+]
+
+function toggleSlotDay(slot, dayKey) {
+  if (!slot.dias) slot.dias = []
+  const idx = slot.dias.indexOf(dayKey)
+  if (idx >= 0) {
+    if (slot.dias.length > 1) {
+      slot.dias.splice(idx, 1)
+    }
+  } else {
+    slot.dias.push(dayKey)
+  }
+}
+
+function applySlotPreset(slot, preset) {
+  if (preset === 'MWF') {
+    slot.dias = ['MONDAY', 'WEDNESDAY', 'FRIDAY']
+  } else if (preset === 'TTH') {
+    slot.dias = ['TUESDAY', 'THURSDAY']
+  } else if (preset === 'WEEKDAYS') {
+    slot.dias = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY']
+  } else if (preset === 'WEEKEND') {
+    slot.dias = ['SATURDAY', 'SUNDAY']
+  } else if (preset === 'SAT') {
+    slot.dias = ['SATURDAY']
+  }
+}
+
+function addSlotToSchedule(target) {
+  if (!target.slots) target.slots = []
+  target.slots.push({
+    dias: ['SATURDAY'],
+    horaInicio: '10:00',
+    horaFin: '12:00'
+  })
+}
+
+function removeSlotFromSchedule(target, index) {
+  if (target.slots && target.slots.length > 1) {
+    target.slots.splice(index, 1)
+  }
+}
+
+function countTotalSessions(slots) {
+  if (!slots || !slots.length) return 0
+  return slots.reduce((acc, s) => acc + (s.dias ? s.dias.length : 0), 0)
+}
+
+function openScheduleModalForGroup(grupoId) {
+  editingId.value = null
+  errors.value = {}
+  modalMode.value = 'create'
+  formSchedule.grupoId = grupoId
+  formSchedule.dia = 'MONDAY'
+  formSchedule.horaInicio = '16:00'
+  formSchedule.horaFin = '18:00'
+  formSchedule.slots = [
+    { dias: ['MONDAY', 'WEDNESDAY', 'FRIDAY'], horaInicio: '16:00', horaFin: '18:00' }
+  ]
+  showModal.value = true
+}
+
+function openScheduleModalForDay(dayKey) {
+  editingId.value = null
+  errors.value = {}
+  modalMode.value = 'create'
+  formSchedule.grupoId = data.grupos[0]?.id || ''
+  formSchedule.dia = dayKey
+  formSchedule.horaInicio = '16:00'
+  formSchedule.horaFin = '18:00'
+  formSchedule.slots = [
+    { dias: [dayKey], horaInicio: '16:00', horaFin: '18:00' }
+  ]
+  showModal.value = true
+}
+
 // Forms state
 const formUser = reactive({ personaId: '', rolId: '', nombreUsuario: '', password: '' })
 const formRole = reactive({ nombre: '', descripcion: '' })
@@ -392,8 +746,89 @@ const formTeacher = reactive({
 const formTeacherAssignment = reactive({
   docenteId: '', grupoId: '', fechaInicio: new Date().toISOString().slice(0, 10), fechaFin: ''
 })
-const formSchedule = reactive({ grupoId: '', dia: 'MONDAY', horaInicio: '16:00', horaFin: '18:00' })
+const formSchedule = reactive({
+  grupoId: '',
+  dia: 'MONDAY',
+  horaInicio: '16:00',
+  horaFin: '18:00',
+  slots: [
+    { dias: ['MONDAY', 'WEDNESDAY', 'FRIDAY'], horaInicio: '16:00', horaFin: '18:00' }
+  ]
+})
 const formEnrollment = reactive({ alumnoId: '', grupoId: '' })
+
+// Enhanced Enrollment (Inscripciones) State & Computeds
+const enrollmentStudentSearch = ref('')
+const selectedEnrollmentStudent = ref(null)
+const registrationStatusFilter = ref('ALL') // 'ALL' | 'ACTIVA' | 'BAJA'
+const registrationCourseFilter = ref('ALL') // 'ALL' | courseId
+
+const registrationStats = computed(() => {
+  const total = data.inscripciones.length
+  const active = data.inscripciones.filter(i => i.estado === 'ACTIVA' || !i.estado).length
+  const bajas = data.inscripciones.filter(i => i.estado === 'BAJA').length
+  const uniqueStudents = new Set(data.inscripciones.map(i => i.alumnoId)).size
+  return { total, active, bajas, uniqueStudents }
+})
+
+const filteredStudentsForEnrollment = computed(() => {
+  const q = enrollmentStudentSearch.value.trim().toLowerCase()
+  const all = data.alumnos || []
+  if (!q) return all.slice(0, 10)
+  return all.filter(a => {
+    const fullName = `${a.nombre} ${a.apellidoPaterno || ''} ${a.apellidoMaterno || ''}`.toLowerCase()
+    const mat = (a.matricula || '').toLowerCase()
+    const tel = (a.telefono || '').replace(/\D/g, '')
+    const em = (a.correo || '').toLowerCase()
+    return fullName.includes(q) || mat.includes(q) || tel.includes(q) || em.includes(q)
+  }).slice(0, 20)
+})
+
+const selectedEnrollmentGroupInfo = computed(() => {
+  if (!formEnrollment.grupoId) return null
+  const g = data.grupos.find(x => x.id === Number(formEnrollment.grupoId))
+  if (!g) return null
+  const oferta = data.ofertas.find(o => o.id === g.ofertaId) || {}
+  const curso = data.cursos.find(c => c.id === oferta.cursoId) || {}
+  const cat = data.categorias.find(c => c.id === g.categoriaId) || {}
+
+  let docenteName = 'Sin docente asignado'
+  const asignacion = (data.asignacionesDocentes || []).find(a => a.grupoId === g.id)
+  if (asignacion) {
+    const d = data.docentes.find(doc => doc.id === asignacion.docenteId)
+    if (d) docenteName = `${d.nombre} ${d.apellidoPaterno || ''}`
+    else if (asignacion.docente) docenteName = asignacion.docente
+  } else if (g.docente) {
+    docenteName = g.docente
+  }
+
+  const groupSchedules = (data.horarios || []).filter(h => h.grupoId === g.id).map(h => ({
+    diaTexto: formatDay(h.dia),
+    rangoHorario: `${formatTime(h.horaInicio)} - ${formatTime(h.horaFin)}`
+  }))
+
+  const enrolledCount = (data.inscripciones || []).filter(i => i.grupoId === g.id && i.estado !== 'BAJA').length
+  return {
+    ...g,
+    nombreCurso: curso.nombre || g.curso || 'Taller Cultural',
+    nombreCategoria: cat.nombre || 'General',
+    docenteName,
+    schedules: groupSchedules,
+    enrolledCount
+  }
+})
+
+function selectStudentForEnrollment(alumno) {
+  selectedEnrollmentStudent.value = alumno
+  formEnrollment.alumnoId = alumno.id
+  if (errors.value.alumnoId) delete errors.value.alumnoId
+}
+
+function clearSelectedStudentForEnrollment() {
+  selectedEnrollmentStudent.value = null
+  formEnrollment.alumnoId = ''
+  enrollmentStudentSearch.value = ''
+}
 const formAttendance = reactive({
   inscripcionId: '', horarioId: '', fecha: new Date().toISOString().slice(0, 10), estado: 'PRESENTE'
 })
@@ -401,6 +836,132 @@ const formPayment = reactive({
   inscripcionId: '', tipoPago: 'INSCRIPCION', periodo: `${new Date().getFullYear()}-1`,
   fechaVencimiento: '', fechaPago: new Date().toISOString().slice(0, 10), estado: 'PAGADO', monto: 500
 })
+
+// Enhanced Attendance (Asistencias) State & Computeds
+const attendanceStudentSearch = ref('')
+const selectedAttendanceEnrollment = ref(null)
+const attendanceStatusFilter = ref('ALL') // 'ALL' | 'PRESENTE' | 'RETARDO' | 'FALTA'
+const attendanceCourseFilter = ref('ALL')
+const attendanceDateFilter = ref('')
+
+const attendanceStats = computed(() => {
+  const total = data.asistencias.length
+  const presentes = data.asistencias.filter(a => a.estado === 'PRESENTE').length
+  const retardos = data.asistencias.filter(a => a.estado === 'RETARDO').length
+  const faltas = data.asistencias.filter(a => a.estado === 'FALTA' || a.estado === 'JUSTIFICADA').length
+  return {
+    total,
+    presentes,
+    presentesPct: total ? Math.round((presentes / total) * 100) : 0,
+    retardos,
+    retardosPct: total ? Math.round((retardos / total) * 100) : 0,
+    faltas,
+    faltasPct: total ? Math.round((faltas / total) * 100) : 0
+  }
+})
+
+const filteredEnrollmentsForAttendance = computed(() => {
+  const q = attendanceStudentSearch.value.trim().toLowerCase()
+  const list = data.inscripciones.filter(i => i.estado === 'ACTIVA' || !i.estado)
+  if (!q) return list.slice(0, 10)
+  return list.filter(i => {
+    const al = data.alumnos.find(a => a.id === i.alumnoId)
+    const per = al?.persona
+    const fullName = `${al?.nombre || ''} ${al?.apellidoPaterno || ''} ${al?.apellidoMaterno || ''} ${per?.nombre || ''} ${i.alumno || ''}`.toLowerCase()
+    const mat = (i.matricula || al?.matricula || '').toLowerCase()
+    const grp = (i.grupo || '').toLowerCase()
+    const tel = (al?.telefono || per?.telefono || '').replace(/\D/g, '')
+    const em = (al?.correo || per?.correo || '').toLowerCase()
+    return fullName.includes(q) || mat.includes(q) || grp.includes(q) || tel.includes(q) || em.includes(q)
+  }).slice(0, 20)
+})
+
+function selectEnrollmentForAttendance(item) {
+  selectedAttendanceEnrollment.value = item
+  formAttendance.inscripcionId = item.id
+  if (errors.value.inscripcionId) delete errors.value.inscripcionId
+}
+
+function clearSelectedEnrollmentForAttendance() {
+  selectedAttendanceEnrollment.value = null
+  formAttendance.inscripcionId = ''
+  attendanceStudentSearch.value = ''
+}
+
+// Enhanced Payments (Pagos) State & Computeds
+const paymentStudentSearch = ref('')
+const selectedPaymentEnrollment = ref(null)
+const paymentStatusFilter = ref('ALL') // 'ALL' | 'PAGADO' | 'PENDIENTE' | 'VENCIDO'
+const paymentConceptFilter = ref('ALL') // 'ALL' | 'INSCRIPCION' | 'MENSUALIDAD' | 'RECARGO'
+const paymentCourseFilter = ref('ALL')
+
+const paymentsStats = computed(() => {
+  const totalCount = data.pagos.length
+  const paidList = data.pagos.filter(p => p.estado === 'PAGADO')
+  const pendingList = data.pagos.filter(p => p.estado === 'PENDIENTE')
+  const overdueList = data.pagos.filter(p => p.estado === 'VENCIDO')
+
+  const totalPaidAmt = paidList.reduce((acc, p) => acc + (Number(p.monto) || (p.tipoPago === 'INSCRIPCION' ? 500 : 400)), 0)
+  const totalPendingAmt = pendingList.reduce((acc, p) => acc + (Number(p.monto) || 400), 0)
+  const totalOverdueAmt = overdueList.reduce((acc, p) => acc + (Number(p.monto) || 400), 0)
+
+  return {
+    totalCount,
+    paidCount: paidList.length,
+    totalPaidAmt,
+    pendingCount: pendingList.length,
+    totalPendingAmt,
+    overdueCount: overdueList.length,
+    totalOverdueAmt
+  }
+})
+
+const filteredEnrollmentsForPayment = computed(() => {
+  const q = paymentStudentSearch.value.trim().toLowerCase()
+  const list = data.inscripciones.filter(i => i.estado === 'ACTIVA' || !i.estado)
+  if (!q) return list.slice(0, 10)
+  return list.filter(i => {
+    const al = data.alumnos.find(a => a.id === i.alumnoId)
+    const per = al?.persona
+    const fullName = `${al?.nombre || ''} ${al?.apellidoPaterno || ''} ${al?.apellidoMaterno || ''} ${per?.nombre || ''} ${i.alumno || ''}`.toLowerCase()
+    const mat = (i.matricula || al?.matricula || '').toLowerCase()
+    const grp = (i.grupo || '').toLowerCase()
+    const tel = (al?.telefono || per?.telefono || '').replace(/\D/g, '')
+    const em = (al?.correo || per?.correo || '').toLowerCase()
+    return fullName.includes(q) || mat.includes(q) || grp.includes(q) || tel.includes(q) || em.includes(q)
+  }).slice(0, 20)
+})
+
+function selectEnrollmentForPayment(item) {
+  selectedPaymentEnrollment.value = item
+  formPayment.inscripcionId = item.id
+  if (errors.value.inscripcionId) delete errors.value.inscripcionId
+  if (formPayment.tipoPago === 'INSCRIPCION') formPayment.monto = 500
+  else if (formPayment.tipoPago === 'MENSUALIDAD') formPayment.monto = 400
+  else if (formPayment.tipoPago === 'RECARGO') formPayment.monto = 150
+}
+
+function clearSelectedEnrollmentForPayment() {
+  selectedPaymentEnrollment.value = null
+  formPayment.inscripcionId = ''
+  paymentStudentSearch.value = ''
+}
+
+function onPaymentConceptChange() {
+  if (formPayment.tipoPago === 'INSCRIPCION') formPayment.monto = 500
+  else if (formPayment.tipoPago === 'MENSUALIDAD') formPayment.monto = 400
+  else if (formPayment.tipoPago === 'RECARGO') formPayment.monto = 150
+}
+
+async function handleQuickMarkAsPaid(pagoId) {
+  try {
+    await updatePaymentStatus(pagoId, 'PAGADO')
+    showToast('Pago registrado como PAGADO exitosamente.')
+    await loadAllData()
+  } catch (err) {
+    showToast(err.message || 'Error al actualizar estado del pago', 'error')
+  }
+}
 const formPassword = reactive({ passwordNueva: '' })
 const formStudentUser = reactive({ password: '' })
 const credentialInfo = ref(null)
@@ -439,7 +1000,10 @@ const formScheduleDirect = reactive({
   nombreGrupo: '',
   dia: 'MONDAY',
   horaInicio: '16:00',
-  horaFin: '17:30'
+  horaFin: '17:30',
+  slots: [
+    { dias: ['MONDAY', 'WEDNESDAY', 'FRIDAY'], horaInicio: '16:00', horaFin: '17:30' }
+  ]
 })
 
 const formTeacherDirect = reactive({
@@ -617,10 +1181,17 @@ function validateForm() {
     }
   } else if (modalMode.value === 'add-schedule-group') {
     if (!formScheduleDirect.grupoId) errors.value.grupoId = 'El grupo es obligatorio.'
-    if (!formScheduleDirect.horaInicio) errors.value.horaInicio = 'Hora de inicio requerida.'
-    if (!formScheduleDirect.horaFin) errors.value.horaFin = 'Hora de fin requerida.'
-    if (formScheduleDirect.horaInicio && formScheduleDirect.horaFin && formScheduleDirect.horaFin <= formScheduleDirect.horaInicio) {
-      errors.value.horaFin = 'La hora de fin debe ser posterior a la de inicio.'
+    if (!formScheduleDirect.slots || !formScheduleDirect.slots.length) {
+      errors.value.slots = 'Agrega al menos un bloque de horario.'
+    } else {
+      formScheduleDirect.slots.forEach((s, idx) => {
+        if (!s.dias || !s.dias.length) errors.value[`slot_${idx}_dias`] = 'Selecciona al menos un día.'
+        if (!s.horaInicio) errors.value[`slot_${idx}_inicio`] = 'Hora de inicio requerida.'
+        if (!s.horaFin) errors.value[`slot_${idx}_fin`] = 'Hora de fin requerida.'
+        if (s.horaInicio && s.horaFin && s.horaFin <= s.horaInicio) {
+          errors.value[`slot_${idx}_fin`] = 'La hora de fin debe ser posterior a la de inicio.'
+        }
+      })
     }
   } else if (modalMode.value === 'assign-teacher-group') {
     if (!formTeacherDirect.grupoId) errors.value.grupoId = 'El grupo es obligatorio.'
@@ -634,7 +1205,12 @@ function validateForm() {
   } else if (modalMode.value === 'edit-course') {
     if (!formEditCourse.nombre?.trim()) errors.value.nombre = 'El nombre del curso es obligatorio.'
   } else if (moduleType.value === 'users') {
-    if (!formUser.personaId) errors.value.personaId = 'Debes buscar y seleccionar a una persona de la lista.'
+    if (userCreationType.value === 'existing') {
+      if (!formUser.personaId) errors.value.personaId = 'Debes buscar y seleccionar a una persona de la lista.'
+    } else {
+      if (!formAdminPerson.nombre?.trim()) errors.value.adminNombre = 'El nombre es obligatorio.'
+      if (!formAdminPerson.apellidoPaterno?.trim()) errors.value.adminApellidoPaterno = 'El apellido paterno es obligatorio.'
+    }
     if (!formUser.rolId) errors.value.rolId = 'Selecciona un rol de acceso.'
     const uErr = validateUsername(formUser.nombreUsuario)
     if (uErr) errors.value.nombreUsuario = uErr
@@ -701,19 +1277,26 @@ function validateForm() {
     }
   } else if (moduleType.value === 'schedules') {
     if (!formSchedule.grupoId) errors.value.grupoId = 'Selecciona un grupo.'
-    if (!formSchedule.horaInicio) errors.value.horaInicio = 'Hora de inicio requerida.'
-    if (!formSchedule.horaFin) errors.value.horaFin = 'Hora de fin requerida.'
-    if (formSchedule.horaInicio && formSchedule.horaFin && formSchedule.horaFin <= formSchedule.horaInicio) {
-      errors.value.horaFin = 'La hora de fin debe ser posterior a la de inicio.'
+    if (!formSchedule.slots || !formSchedule.slots.length) {
+      errors.value.slots = 'Agrega al menos un bloque de horario.'
+    } else {
+      formSchedule.slots.forEach((s, idx) => {
+        if (!s.dias || !s.dias.length) errors.value[`slot_${idx}_dias`] = 'Selecciona al menos un día.'
+        if (!s.horaInicio) errors.value[`slot_${idx}_inicio`] = 'Hora de inicio requerida.'
+        if (!s.horaFin) errors.value[`slot_${idx}_fin`] = 'Hora de fin requerida.'
+        if (s.horaInicio && s.horaFin && s.horaFin <= s.horaInicio) {
+          errors.value[`slot_${idx}_fin`] = 'La hora de fin debe ser posterior a la de inicio.'
+        }
+      })
     }
   } else if (moduleType.value === 'registrations') {
-    if (!formEnrollment.alumnoId) errors.value.alumnoId = 'Selecciona un alumno.'
-    if (!formEnrollment.grupoId) errors.value.grupoId = 'Selecciona un grupo.'
+    if (!formEnrollment.alumnoId) errors.value.alumnoId = 'Debes buscar y seleccionar un alumno de la lista.'
+    if (!formEnrollment.grupoId) errors.value.grupoId = 'Selecciona el grupo o taller al que se inscribirá.'
   } else if (moduleType.value === 'attendance') {
-    if (!formAttendance.inscripcionId) errors.value.inscripcionId = 'Selecciona una inscripción.'
+    if (!formAttendance.inscripcionId) errors.value.inscripcionId = 'Debes buscar y seleccionar un alumno inscrito de la lista.'
     if (!formAttendance.fecha) errors.value.fecha = 'La fecha es obligatoria.'
   } else if (moduleType.value === 'payments') {
-    if (!formPayment.inscripcionId) errors.value.inscripcionId = 'Selecciona una inscripción.'
+    if (!formPayment.inscripcionId) errors.value.inscripcionId = 'Debes buscar y seleccionar un alumno inscrito de la lista.'
     if (!formPayment.tipoPago) errors.value.tipoPago = 'Selecciona un tipo de pago.'
     if (!formPayment.periodo?.trim()) errors.value.periodo = 'El periodo es obligatorio.'
     if (!formPayment.monto || Number(formPayment.monto) <= 0) errors.value.monto = 'Ingresa un monto mayor a 0.'
@@ -747,7 +1330,13 @@ function openCreateModal() {
     })
   } else if (moduleType.value === 'users') {
     modalMode.value = 'create'
+    userCreationType.value = 'admin'
+    selectedPerson.value = null
+    personSearch.value = ''
     Object.assign(formUser, { personaId: '', rolId: '', nombreUsuario: '', password: '' })
+    Object.assign(formAdminPerson, { nombre: '', apellidoPaterno: '', apellidoMaterno: '', correo: '', telefono: '' })
+    const supRole = data.roles.find(r => r.nombre.toUpperCase().includes('SUPERVISOR'))
+    if (supRole) formUser.rolId = supRole.id
   } else if (moduleType.value === 'roles') {
     modalMode.value = 'create'
     Object.assign(formRole, { nombre: '', descripcion: '' })
@@ -768,23 +1357,36 @@ function openCreateModal() {
   } else if (moduleType.value === 'schedules') {
     modalMode.value = 'create'
     Object.assign(formSchedule, {
-      grupoId: data.grupos[0]?.id || '', dia: 'MONDAY', horaInicio: '16:00', horaFin: '18:00'
+      grupoId: data.grupos[0]?.id || '',
+      dia: 'MONDAY',
+      horaInicio: '16:00',
+      horaFin: '18:00',
+      slots: [
+        { dias: ['MONDAY', 'WEDNESDAY', 'FRIDAY'], horaInicio: '16:00', horaFin: '18:00' }
+      ]
     })
   } else if (moduleType.value === 'registrations') {
     modalMode.value = 'create'
+    selectedEnrollmentStudent.value = null
+    enrollmentStudentSearch.value = ''
     Object.assign(formEnrollment, {
-      alumnoId: data.alumnos[0]?.id || '', grupoId: data.grupos[0]?.id || ''
+      alumnoId: '',
+      grupoId: data.grupos[0]?.id || ''
     })
   } else if (moduleType.value === 'attendance') {
     modalMode.value = 'create'
+    selectedAttendanceEnrollment.value = null
+    attendanceStudentSearch.value = ''
     Object.assign(formAttendance, {
-      inscripcionId: data.inscripciones[0]?.id || '', horarioId: '',
+      inscripcionId: '', horarioId: '',
       fecha: new Date().toISOString().slice(0, 10), estado: 'PRESENTE'
     })
   } else if (moduleType.value === 'payments') {
     modalMode.value = 'create'
+    selectedPaymentEnrollment.value = null
+    paymentStudentSearch.value = ''
     Object.assign(formPayment, {
-      inscripcionId: data.inscripciones[0]?.id || '', tipoPago: 'INSCRIPCION',
+      inscripcionId: '', tipoPago: 'INSCRIPCION',
       periodo: `${new Date().getFullYear()}-1`, fechaVencimiento: '', fechaPago: new Date().toISOString().slice(0, 10),
       estado: 'PAGADO', monto: 500
     })
@@ -826,7 +1428,10 @@ function openAddScheduleToGroupModal(group, courseName) {
     nombreGrupo: `${courseName ? courseName + ' - ' : ''}${group.nombreGrupo}`,
     dia: 'MONDAY',
     horaInicio: '16:00',
-    horaFin: '17:30'
+    horaFin: '17:30',
+    slots: [
+      { dias: ['MONDAY', 'WEDNESDAY', 'FRIDAY'], horaInicio: '16:00', horaFin: '17:30' }
+    ]
   })
   showModal.value = true
 }
@@ -1034,13 +1639,17 @@ async function handleModalSubmit() {
       }
       showToast('¡Nuevo grupo agregado con éxito al taller!')
     } else if (modalMode.value === 'add-schedule-group') {
-      await createSchedule({
+      const slotsPayload = (formScheduleDirect.slots || []).map(s => ({
+        dias: s.dias,
+        horaInicio: s.horaInicio.length === 5 ? `${s.horaInicio}:00` : s.horaInicio,
+        horaFin: s.horaFin.length === 5 ? `${s.horaFin}:00` : s.horaFin
+      }))
+      const created = await createSchedulesBatch({
         grupoId: Number(formScheduleDirect.grupoId),
-        dia: formScheduleDirect.dia,
-        horaInicio: formScheduleDirect.horaInicio.length === 5 ? `${formScheduleDirect.horaInicio}:00` : formScheduleDirect.horaInicio,
-        horaFin: formScheduleDirect.horaFin.length === 5 ? `${formScheduleDirect.horaFin}:00` : formScheduleDirect.horaFin
+        slots: slotsPayload
       })
-      showToast('Horario asignado al grupo correctamente.')
+      const count = Array.isArray(created) ? created.length : 1
+      showToast(`¡Se asignaron exitosamente ${count} horario(s) al grupo!`)
     } else if (modalMode.value === 'assign-teacher-group') {
       await assignTeacherToGroup({
         docenteId: Number(formTeacherDirect.docenteId),
@@ -1070,12 +1679,25 @@ async function handleModalSubmit() {
       })
       showToast('Docente asignado al grupo exitosamente.')
     } else if (moduleType.value === 'users') {
-      await createUser({
-        personaId: Number(formUser.personaId),
-        rolId: Number(formUser.rolId),
-        nombreUsuario: formUser.nombreUsuario.trim(),
-        password: formUser.password
-      })
+      if (userCreationType.value === 'admin') {
+        await createUser({
+          nombre: formAdminPerson.nombre.trim(),
+          apellidoPaterno: formAdminPerson.apellidoPaterno.trim(),
+          apellidoMaterno: formAdminPerson.apellidoMaterno?.trim() || null,
+          correo: formAdminPerson.correo?.trim() || null,
+          telefono: formAdminPerson.telefono ? formAdminPerson.telefono.replace(/[\s-]/g, '') : null,
+          rolId: Number(formUser.rolId),
+          nombreUsuario: formUser.nombreUsuario.trim(),
+          password: formUser.password
+        })
+      } else {
+        await createUser({
+          personaId: Number(formUser.personaId),
+          rolId: Number(formUser.rolId),
+          nombreUsuario: formUser.nombreUsuario.trim(),
+          password: formUser.password
+        })
+      }
       showToast('Usuario creado exitosamente.')
     } else if (moduleType.value === 'roles') {
       const payload = {
@@ -1127,13 +1749,17 @@ async function handleModalSubmit() {
         showToast('Docente registrado exitosamente.')
       }
     } else if (moduleType.value === 'schedules') {
-      await createSchedule({
+      const slotsPayload = (formSchedule.slots || []).map(s => ({
+        dias: s.dias,
+        horaInicio: s.horaInicio.length === 5 ? `${s.horaInicio}:00` : s.horaInicio,
+        horaFin: s.horaFin.length === 5 ? `${s.horaFin}:00` : s.horaFin
+      }))
+      const created = await createSchedulesBatch({
         grupoId: Number(formSchedule.grupoId),
-        dia: formSchedule.dia,
-        horaInicio: formSchedule.horaInicio.length === 5 ? `${formSchedule.horaInicio}:00` : formSchedule.horaInicio,
-        horaFin: formSchedule.horaFin.length === 5 ? `${formSchedule.horaFin}:00` : formSchedule.horaFin
+        slots: slotsPayload
       })
-      showToast('Horario programado exitosamente.')
+      const count = Array.isArray(created) ? created.length : 1
+      showToast(`¡Se registraron exitosamente ${count} horario(s) para el grupo!`)
     } else if (moduleType.value === 'registrations') {
       await createEnrollment({
         alumnoId: Number(formEnrollment.alumnoId),
@@ -1178,6 +1804,7 @@ async function handleDeactivate(type, id) {
     if (type === 'role') await deleteRole(id)
     if (type === 'student') await deactivateStudent(id)
     if (type === 'teacher') await deactivateTeacher(id)
+    if (type === 'registration') await deactivateEnrollment(id)
     showToast('Registro actualizado/desactivado.')
     await loadAllData()
   } catch (err) {
@@ -1227,9 +1854,9 @@ const columns = computed(() => {
     case 'registrations':
       return ['Alumno', 'Grupo Asignado', 'Fecha Inscripción', 'Estado']
     case 'attendance':
-      return ['Fecha', 'Alumno', 'Grupo / Taller', 'Estado']
+      return ['Alumno', 'Taller / Grupo', 'Fecha y Hora', 'Estado']
     case 'payments':
-      return ['Alumno / Inscripción', 'Concepto', 'Periodo', 'Estado']
+      return ['Alumno', 'Concepto y Monto', 'Taller / Periodo', 'Estado']
     default:
       return ['Nombre', 'Detalle', 'Información', 'Estado']
   }
@@ -1291,68 +1918,184 @@ const currentTableRows = computed(() => {
   }
 
   if (moduleType.value === 'schedules') {
-    const list = []
-    data.grupos.forEach(g => {
-      list.push({
-        id: g.id,
-        nombre: g.nombreGrupo || g.curso || 'Grupo Cultural',
-        subtexto: g.curso || 'Taller',
-        correo: 'Lunes a Viernes',
-        rol: '16:00 - 18:00',
-        estado: 'ACTIVO',
-        raw: g
-      })
+    const list = (data.horarios || []).map(h => {
+      const g = data.grupos.find(grp => grp.id === h.grupoId)
+      const oferta = g ? data.ofertas.find(o => o.id === g.ofertaId) : null
+      const curso = oferta ? data.cursos.find(c => c.id === oferta.cursoId) : null
+      const diaTexto = formatDay(h.dia)
+      const horaTexto = `${formatTime(h.horaInicio)} - ${formatTime(h.horaFin)}`
+      return {
+        id: h.id,
+        nombre: g ? g.nombreGrupo : (h.nombreGrupo || 'Grupo'),
+        subtexto: curso ? curso.nombre : (h.nombre || 'Taller'),
+        correo: diaTexto,
+        rol: horaTexto,
+        estado: 'PROGRAMADO',
+        raw: h
+      }
     })
-    return q ? list.filter(x => x.nombre.toLowerCase().includes(q)) : list
+    return q ? list.filter(x => x.nombre.toLowerCase().includes(q) || x.subtexto.toLowerCase().includes(q) || x.correo.toLowerCase().includes(q)) : list
   }
 
   if (moduleType.value === 'registrations') {
-    const list = data.inscripciones.map(ins => {
+    let list = data.inscripciones.map(ins => {
       const alumno = data.alumnos.find(a => a.id === ins.alumnoId)
       const grupo = data.grupos.find(g => g.id === ins.grupoId)
+      const oferta = grupo ? data.ofertas.find(o => o.id === grupo.ofertaId) : null
+      const curso = oferta ? data.cursos.find(c => c.id === oferta.cursoId) : null
+      const fullName = alumno
+        ? `${alumno.nombre} ${alumno.apellidoPaterno || ''} ${alumno.apellidoMaterno || ''}`.trim()
+        : (ins.matricula || ins.alumno || `Alumno #${ins.alumnoId}`)
+      const matricula = alumno?.matricula || ins.matricula || ''
+      const tallerNombre = curso?.nombre || (grupo ? grupo.nombreGrupo : (ins.grupo || 'Taller Cultural'))
+      const grupoNombre = grupo?.nombreGrupo || 'Grupo'
       return {
         id: ins.id,
-        nombre: alumno ? `${alumno.nombre} ${alumno.apellidoPaterno}` : (ins.matricula || ins.alumno || 'Alumno'),
-        subtexto: alumno?.matricula || '',
-        correo: grupo?.nombreGrupo || ins.grupo || 'Grupo Taller',
-        rol: ins.fechaInscripcion || '2026-05-20',
+        nombre: fullName,
+        subtexto: matricula,
+        correo: grupo ? `${grupoNombre} · ${tallerNombre}` : tallerNombre,
+        rol: ins.fechaInscripcion ? String(ins.fechaInscripcion).slice(0, 10) : '2026-05-20',
         estado: ins.estado || 'ACTIVA',
+        cursoId: curso?.id || null,
+        alumno,
+        grupo,
         raw: ins
       }
     })
-    return q ? list.filter(x => x.nombre.toLowerCase().includes(q) || x.correo.toLowerCase().includes(q)) : list
+
+    if (registrationStatusFilter.value !== 'ALL') {
+      list = list.filter(item => item.estado === registrationStatusFilter.value)
+    }
+
+    if (registrationCourseFilter.value !== 'ALL') {
+      list = list.filter(item => item.cursoId === Number(registrationCourseFilter.value))
+    }
+
+    if (q) {
+      list = list.filter(x =>
+        x.nombre.toLowerCase().includes(q) ||
+        x.subtexto.toLowerCase().includes(q) ||
+        x.correo.toLowerCase().includes(q) ||
+        (x.alumno?.telefono && x.alumno.telefono.includes(q)) ||
+        (x.alumno?.correo && x.alumno.correo.toLowerCase().includes(q))
+      )
+    }
+
+    return list
   }
 
   if (moduleType.value === 'attendance') {
-    const list = data.asistencias.map(a => {
+    let list = data.asistencias.map(a => {
+      const ins = data.inscripciones.find(i => i.matricula === a.matricula || i.alumno === a.alumno)
+      const al = data.alumnos.find(x => x.matricula === a.matricula || x.id === ins?.alumnoId)
+      const per = al?.persona
+
+      const studentName = a.alumno || (per ? `${per.nombre} ${per.apellidoPaterno} ${per.apellidoMaterno || ''}`.trim() : 'Alumno')
+      const matricula = a.matricula || al?.matricula || ins?.matricula || 'ALU-REG'
+      const hora = a.horaRegistro ? (typeof a.horaRegistro === 'string' && a.horaRegistro.length >= 16 ? a.horaRegistro.slice(11, 16) : '') : ''
+
       return {
         id: a.id,
-        nombre: a.fecha || '2026-05-20',
-        subtexto: a.estado,
-        correo: a.matricula || a.alumno || 'Alumno registrado',
-        rol: a.grupo || 'Taller',
+        nombre: studentName,
+        subtexto: matricula,
+        correo: a.grupo || ins?.grupo || 'Taller',
+        rol: a.fecha ? `${a.fecha}${hora ? ' · ' + hora + ' hrs' : ''}` : 'Fecha no reg.',
         estado: a.estado || 'PRESENTE',
+        alumnoData: al,
         raw: a
       }
     })
-    return q ? list.filter(x => x.correo.toLowerCase().includes(q) || x.nombre.toLowerCase().includes(q)) : list
+
+    if (attendanceStatusFilter.value !== 'ALL') {
+      if (attendanceStatusFilter.value === 'FALTA') {
+        list = list.filter(x => x.estado === 'FALTA' || x.estado === 'JUSTIFICADA')
+      } else {
+        list = list.filter(x => x.estado === attendanceStatusFilter.value)
+      }
+    }
+
+    if (attendanceCourseFilter.value !== 'ALL') {
+      const selectedCourse = data.cursos.find(c => c.id === Number(attendanceCourseFilter.value))
+      if (selectedCourse) {
+        list = list.filter(x => (x.correo || '').toLowerCase().includes(selectedCourse.nombre.toLowerCase()))
+      }
+    }
+
+    if (attendanceDateFilter.value) {
+      list = list.filter(x => x.raw.fecha === attendanceDateFilter.value)
+    }
+
+    if (q) {
+      list = list.filter(x => {
+        const per = x.alumnoData?.persona
+        const matchName = (x.nombre || '').toLowerCase().includes(q) ||
+          `${per?.nombre || ''} ${per?.apellidoPaterno || ''} ${per?.apellidoMaterno || ''}`.toLowerCase().includes(q)
+        const matchMat = (x.subtexto || '').toLowerCase().includes(q)
+        const matchGrp = (x.correo || '').toLowerCase().includes(q)
+        const matchDate = (x.rol || '').toLowerCase().includes(q) || (x.raw.fecha || '').includes(q)
+        const matchPhone = (per?.telefono || x.alumnoData?.telefono || '').includes(q)
+        const matchEmail = (per?.correo || x.alumnoData?.correo || '').toLowerCase().includes(q)
+        return matchName || matchMat || matchGrp || matchDate || matchPhone || matchEmail
+      })
+    }
+
+    return list
   }
 
   if (moduleType.value === 'payments') {
-    const list = data.pagos.map(p => {
+    let list = data.pagos.map(p => {
       const ins = data.inscripciones.find(i => i.id === p.inscripcionId)
       const al = data.alumnos.find(a => a.id === ins?.alumnoId)
+      const per = al?.persona
+
+      const studentName = p.alumno || (per ? `${per.nombre} ${per.apellidoPaterno} ${per.apellidoMaterno || ''}`.trim() : (ins?.alumno || 'Alumno'))
+      const matricula = p.matricula || al?.matricula || ins?.matricula || ''
+      const montoNum = Number(p.monto) || (p.tipoPago === 'INSCRIPCION' ? 500 : p.tipoPago === 'RECARGO' ? 150 : 400)
+      const montoFormatted = montoNum.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
+
       return {
         id: p.id,
-        nombre: al ? `${al.nombre} ${al.apellidoPaterno}` : (p.alumno || 'Alumno'),
-        subtexto: `Ref #${p.id}`,
-        correo: p.tipoPago,
-        rol: p.periodo || '2026-1',
+        nombre: studentName,
+        subtexto: `${matricula ? matricula + ' · ' : ''}Ref #${p.id}`,
+        correo: `${p.tipoPago} · ${montoFormatted}`,
+        rol: `${ins?.grupo || p.grupo || 'Taller'} (${p.periodo || '2026-1'})${p.fechaVencimiento ? ' · Vence: ' + p.fechaVencimiento : ''}`,
         estado: p.estado || 'PAGADO',
+        alumnoData: al,
+        inscripcionData: ins,
         raw: p
       }
     })
-    return q ? list.filter(x => x.nombre.toLowerCase().includes(q) || x.correo.toLowerCase().includes(q)) : list
+
+    if (paymentStatusFilter.value !== 'ALL') {
+      list = list.filter(x => x.estado === paymentStatusFilter.value)
+    }
+
+    if (paymentConceptFilter.value !== 'ALL') {
+      list = list.filter(x => x.raw.tipoPago === paymentConceptFilter.value)
+    }
+
+    if (paymentCourseFilter.value !== 'ALL') {
+      const selectedCourse = data.cursos.find(c => c.id === Number(paymentCourseFilter.value))
+      if (selectedCourse) {
+        list = list.filter(x => (x.rol || '').toLowerCase().includes(selectedCourse.nombre.toLowerCase()))
+      }
+    }
+
+    if (q) {
+      list = list.filter(x => {
+        const per = x.alumnoData?.persona
+        const matchName = (x.nombre || '').toLowerCase().includes(q) ||
+          `${per?.nombre || ''} ${per?.apellidoPaterno || ''} ${per?.apellidoMaterno || ''}`.toLowerCase().includes(q)
+        const matchMat = (x.subtexto || '').toLowerCase().includes(q)
+        const matchConcept = (x.correo || '').toLowerCase().includes(q)
+        const matchGrp = (x.rol || '').toLowerCase().includes(q)
+        const matchPhone = (per?.telefono || x.alumnoData?.telefono || '').includes(q)
+        const matchEmail = (per?.correo || x.alumnoData?.correo || '').toLowerCase().includes(q)
+        return matchName || matchMat || matchConcept || matchGrp || matchPhone || matchEmail
+      })
+    }
+
+    return list
   }
 
   return []
@@ -1981,9 +2724,762 @@ const specialContent = computed(() => {
           </div>
         </template>
 
+        <!-- ======================================================== -->
+        <!-- OPTION B: RICH SCHEDULES & TIMETABLE EXPERIENCE          -->
+        <!-- ======================================================== -->
+        <template v-else-if="moduleType === 'schedules'">
+          <!-- Top Stats Banner -->
+          <div class="schedules-stats-banner">
+            <div class="sc-stat-item">
+              <div class="sc-stat-icon calendar-icon">
+                <CalendarDays :size="20" />
+              </div>
+              <div class="sc-stat-info">
+                <strong>{{ scheduleStats.totalSessions }}</strong>
+                <span>Sesiones Semanales</span>
+              </div>
+            </div>
+
+            <div class="sc-stat-item">
+              <div class="sc-stat-icon group-icon">
+                <Layers :size="20" />
+              </div>
+              <div class="sc-stat-info">
+                <strong>{{ scheduleStats.groupsWithSchedule }} / {{ scheduleStats.totalGroups }}</strong>
+                <span>Grupos Programados</span>
+              </div>
+            </div>
+
+            <div class="sc-stat-item">
+              <div class="sc-stat-icon hours-icon">
+                <Clock :size="20" />
+              </div>
+              <div class="sc-stat-info">
+                <strong>{{ scheduleStats.totalHours }} hrs</strong>
+                <span>Carga Horaria Semanal</span>
+              </div>
+            </div>
+
+            <div class="sc-stat-item">
+              <div class="sc-stat-icon peak-icon">
+                <Sparkles :size="20" />
+              </div>
+              <div class="sc-stat-info">
+                <strong>{{ scheduleStats.peakDay }}</strong>
+                <span>Día con Mayor Actividad</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Controls & Filters Toolbar -->
+          <div class="schedules-toolbar">
+            <div class="schedules-filters-left">
+              <!-- Search box -->
+              <div class="search-box">
+                <Search :size="18" />
+                <input
+                  v-model="search"
+                  type="text"
+                  placeholder="Buscar por taller, grupo, docente o día..."
+                />
+              </div>
+
+              <!-- Day Filter dropdown -->
+              <div class="filter-select-wrapper">
+                <Calendar :size="16" class="select-icon" />
+                <select v-model="scheduleDayFilter" class="filter-select">
+                  <option value="ALL">Todos los Días</option>
+                  <option v-for="wd in weekDays" :key="wd.key" :value="wd.key">
+                    {{ wd.name }}
+                  </option>
+                </select>
+              </div>
+
+              <!-- Workshop Filter dropdown -->
+              <div class="filter-select-wrapper">
+                <BookOpen :size="16" class="select-icon" />
+                <select v-model="scheduleCourseFilter" class="filter-select">
+                  <option value="ALL">Todos los Talleres</option>
+                  <option v-for="c in data.cursos" :key="c.id" :value="c.id">
+                    {{ c.nombre }}
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <div class="schedules-controls-right">
+              <!-- View Mode Switcher -->
+              <div class="view-mode-toggle">
+                <button
+                  type="button"
+                  class="mode-btn"
+                  :class="{ active: scheduleViewMode === 'calendar' }"
+                  title="Vista Parrilla Semanal"
+                  @click="scheduleViewMode = 'calendar'"
+                >
+                  <CalendarDays :size="15" />
+                  <span>Parrilla Semanal</span>
+                </button>
+                <button
+                  type="button"
+                  class="mode-btn"
+                  :class="{ active: scheduleViewMode === 'groups' }"
+                  title="Vista por Grupos y Talleres"
+                  @click="scheduleViewMode = 'groups'"
+                >
+                  <Layers :size="15" />
+                  <span>Por Grupos</span>
+                </button>
+                <button
+                  type="button"
+                  class="mode-btn"
+                  :class="{ active: scheduleViewMode === 'list' }"
+                  title="Vista Tabla Detallada"
+                  @click="scheduleViewMode = 'list'"
+                >
+                  <List :size="15" />
+                  <span>Tabla</span>
+                </button>
+              </div>
+
+              <!-- Primary Action -->
+              <button type="button" class="primary-button" @click="openCreateModal">
+                <Plus :size="17" />
+                Programar Horario
+              </button>
+            </div>
+          </div>
+
+          <!-- 1. VISTA PARRILLA SEMANAL (CALENDAR / TIMETABLE GRID) -->
+          <div v-if="scheduleViewMode === 'calendar'" class="calendar-timetable-grid">
+            <div
+              v-for="col in schedulesByDay"
+              :key="col.key"
+              class="day-column"
+              :class="{ 'is-today': col.isToday }"
+            >
+              <!-- Day Column Header -->
+              <div class="day-column-header">
+                <div class="day-title-row">
+                  <span class="day-short">{{ col.short }}</span>
+                  <span class="day-name">{{ col.name }}</span>
+                  <span v-if="col.isToday" class="today-badge">HOY</span>
+                </div>
+                <div class="day-meta-row">
+                  <span class="sessions-counter">
+                    {{ col.totalSessions === 1 ? '1 clase' : `${col.totalSessions} clases` }}
+                  </span>
+                  <button
+                    type="button"
+                    class="quick-add-day-btn"
+                    title="Programar clase para este día"
+                    @click="openScheduleModalForDay(col.key)"
+                  >
+                    <Plus :size="13" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Sessions in this day -->
+              <div class="day-sessions-container">
+                <div
+                  v-for="session in col.sessions"
+                  :key="session.id"
+                  class="session-card"
+                  :style="{ '--accent-color': session.themeColor }"
+                >
+                  <div class="session-card-top">
+                    <div class="time-range-badge">
+                      <Clock :size="12" />
+                      <span>{{ session.horaInicioFormateada }} - {{ session.horaFinFormateada }}</span>
+                    </div>
+                    <span v-if="session.durationText" class="duration-pill">
+                      {{ session.durationText }}
+                    </span>
+                  </div>
+
+                  <div class="session-course-name">
+                    {{ session.nombreCurso }}
+                  </div>
+
+                  <div class="session-group-name">
+                    {{ session.nombreGrupo }}
+                  </div>
+
+                  <div class="session-card-bottom">
+                    <div class="session-teacher" :title="session.docenteName">
+                      <UserCheck :size="12" />
+                      <span>{{ session.docenteName }}</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      class="session-delete-btn"
+                      title="Eliminar este horario"
+                      @click="handleDeleteSchedule(session.id, `${session.nombreCurso} - ${session.diaTexto} ${session.rangoHorario}`)"
+                    >
+                      <Trash2 :size="13" />
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Empty Day State -->
+                <div v-if="col.sessions.length === 0" class="empty-day-state">
+                  <div class="empty-day-icon">
+                    <CalendarDays :size="20" />
+                  </div>
+                  <span>Sin clases programadas</span>
+                  <button
+                    type="button"
+                    class="empty-day-add-link"
+                    @click="openScheduleModalForDay(col.key)"
+                  >
+                    + Asignar clase
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. VISTA POR GRUPOS Y TALLERES (GROUP AGENDAS) -->
+          <div v-else-if="scheduleViewMode === 'groups'" class="groups-schedules-grid">
+            <div
+              v-for="grp in schedulesByGroup"
+              :key="grp.id"
+              class="group-schedule-card"
+            >
+              <div class="group-schedule-header">
+                <div class="group-header-left">
+                  <div class="group-course-badge">
+                    <BookOpen :size="13" />
+                    <span>{{ grp.cursoNombre }}</span>
+                  </div>
+                  <h4>{{ grp.nombreGrupo }}</h4>
+                  <div class="group-meta-chips">
+                    <span class="meta-chip category">
+                      <Tag :size="11" />
+                      {{ grp.categoriaNombre }}
+                    </span>
+                    <span class="meta-chip teacher">
+                      <UserCheck :size="11" />
+                      {{ grp.docenteName }}
+                    </span>
+                    <span class="meta-chip students">
+                      <GraduationCap :size="11" />
+                      {{ grp.totalInscritos }} alumnos
+                    </span>
+                  </div>
+                </div>
+
+                <div class="group-header-right">
+                  <button
+                    type="button"
+                    class="add-schedule-to-group-btn"
+                    @click="openScheduleModalForGroup(grp.id)"
+                  >
+                    <Plus :size="14" />
+                    Agregar Horario
+                  </button>
+                </div>
+              </div>
+
+              <!-- List of scheduled days for this group -->
+              <div class="group-schedules-body">
+                <div class="schedule-slots-title">
+                  <span>Días y horarios asignados:</span>
+                  <strong v-if="grp.horarios.length">
+                    {{ grp.totalSesiones }} {{ grp.totalSesiones === 1 ? 'sesión semanal' : 'sesiones semanales' }} ({{ grp.totalHours }} hrs/sem)
+                  </strong>
+                </div>
+
+                <div v-if="grp.horarios.length" class="schedule-slots-flex">
+                  <div
+                    v-for="sched in grp.horarios"
+                    :key="sched.id"
+                    class="schedule-slot-pill"
+                  >
+                    <div class="slot-day-badge">
+                      {{ sched.diaTexto }}
+                    </div>
+                    <div class="slot-time-range">
+                      <Clock :size="13" />
+                      <span>{{ sched.rangoHorario }}</span>
+                    </div>
+                    <button
+                      type="button"
+                      class="slot-remove-btn"
+                      title="Eliminar este horario"
+                      @click="handleDeleteSchedule(sched.id, `${grp.nombreGrupo} - ${sched.diaTexto} ${sched.rangoHorario}`)"
+                    >
+                      <Trash2 :size="12" />
+                    </button>
+                  </div>
+                </div>
+
+                <div v-else class="group-no-schedules-alert">
+                  <AlertCircle :size="16" />
+                  <span>Este grupo aún no tiene horarios asignados en la semana.</span>
+                  <button
+                    type="button"
+                    class="assign-now-link"
+                    @click="openScheduleModalForGroup(grp.id)"
+                  >
+                    Programar ahora
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Empty groups state -->
+            <div v-if="schedulesByGroup.length === 0" class="empty-state-large">
+              <Layers :size="48" />
+              <h3>No se encontraron grupos</h3>
+              <p>Crea grupos en el módulo de Talleres para poder programarles horarios semanales.</p>
+            </div>
+          </div>
+
+          <!-- 3. VISTA TABLA DETALLADA (DETAILED REAL TABLE) -->
+          <div v-else-if="scheduleViewMode === 'list'" class="table-panel">
+            <table v-if="enrichedSchedules.length">
+              <thead>
+                <tr>
+                  <th>Taller Cultural</th>
+                  <th>Grupo</th>
+                  <th>Día</th>
+                  <th>Horario</th>
+                  <th>Duración</th>
+                  <th>Docente</th>
+                  <th style="text-align: right; padding-right: 20px;">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in enrichedSchedules" :key="item.id">
+                  <td>
+                    <div class="course-cell">
+                      <div class="course-dot" :style="{ backgroundColor: item.themeColor }"></div>
+                      <strong>{{ item.nombreCurso }}</strong>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="group-badge-cell">{{ item.nombreGrupo }}</span>
+                  </td>
+                  <td>
+                    <span class="day-tag-badge" :class="item.diaKey.toLowerCase()">
+                      {{ item.diaTexto }}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="time-cell">
+                      <Clock :size="13" />
+                      <span>{{ item.rangoHorario }}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="duration-cell">{{ item.durationText || '-' }}</span>
+                  </td>
+                  <td>{{ item.docenteName }}</td>
+                  <td style="text-align: right; padding-right: 20px;">
+                    <button
+                      type="button"
+                      class="action-button-danger"
+                      title="Eliminar horario"
+                      @click="handleDeleteSchedule(item.id, `${item.nombreCurso} (${item.diaTexto} ${item.rangoHorario})`)"
+                    >
+                      <Trash2 :size="15" />
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div v-else class="empty-state-large">
+              <CalendarDays :size="48" />
+              <h3>No se encontraron horarios</h3>
+              <p v-if="search">No hay horarios que coincidan con "{{ search }}".</p>
+              <p v-else>Aún no se han programado horarios para los talleres culturales.</p>
+              <button type="button" class="primary-button" @click="openCreateModal">
+                <Plus :size="16" />
+                Programar Primer Horario
+              </button>
+            </div>
+          </div>
+        </template>
+
         <!-- TABLE VIEW FOR CRUD MODULES (Users, Students, Teachers, Roles, etc.) -->
-        <template v-else-if="currentTableRows.length || search">
-          <div class="toolbar">
+        <template v-else-if="currentTableRows.length || search || ['registrations', 'attendance', 'payments'].includes(moduleType)">
+          <!-- REGISTRATIONS DEDICATED EXPERIENCE BANNER -->
+          <div v-if="moduleType === 'registrations'" class="registrations-stats-banner">
+            <div class="rg-stat-card">
+              <div class="rg-stat-icon blue">
+                <ClipboardList :size="20" />
+              </div>
+              <div class="rg-stat-content">
+                <span class="rg-stat-label">Total Inscripciones</span>
+                <span class="rg-stat-value">{{ registrationStats.total }}</span>
+              </div>
+            </div>
+
+            <div class="rg-stat-card">
+              <div class="rg-stat-icon indigo">
+                <GraduationCap :size="20" />
+              </div>
+              <div class="rg-stat-content">
+                <span class="rg-stat-label">Alumnos Únicos</span>
+                <span class="rg-stat-value">{{ registrationStats.uniqueStudents }}</span>
+              </div>
+            </div>
+
+            <div class="rg-stat-card">
+              <div class="rg-stat-icon green">
+                <CheckCircle2 :size="20" />
+              </div>
+              <div class="rg-stat-content">
+                <span class="rg-stat-label">Inscripciones Activas</span>
+                <span class="rg-stat-value text-green">{{ registrationStats.active }}</span>
+              </div>
+            </div>
+
+            <div class="rg-stat-card">
+              <div class="rg-stat-icon gray">
+                <AlertCircle :size="20" />
+              </div>
+              <div class="rg-stat-content">
+                <span class="rg-stat-label">Bajas Registradas</span>
+                <span class="rg-stat-value text-gray">{{ registrationStats.bajas }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ATTENDANCE DEDICATED EXPERIENCE BANNER -->
+          <div v-else-if="moduleType === 'attendance'" class="registrations-stats-banner attendance-banner">
+            <div class="rg-stat-card">
+              <div class="rg-stat-icon blue">
+                <ClipboardList :size="20" />
+              </div>
+              <div class="rg-stat-content">
+                <span class="rg-stat-label">Total Registros</span>
+                <span class="rg-stat-value">{{ attendanceStats.total }}</span>
+              </div>
+            </div>
+
+            <div class="rg-stat-card">
+              <div class="rg-stat-icon green">
+                <UserCheck :size="20" />
+              </div>
+              <div class="rg-stat-content">
+                <span class="rg-stat-label">Presentes</span>
+                <span class="rg-stat-value text-green">{{ attendanceStats.presentes }} ({{ attendanceStats.presentesPct }}%)</span>
+              </div>
+            </div>
+
+            <div class="rg-stat-card">
+              <div class="rg-stat-icon amber">
+                <Clock :size="20" />
+              </div>
+              <div class="rg-stat-content">
+                <span class="rg-stat-label">Retardos</span>
+                <span class="rg-stat-value text-amber">{{ attendanceStats.retardos }} ({{ attendanceStats.retardosPct }}%)</span>
+              </div>
+            </div>
+
+            <div class="rg-stat-card">
+              <div class="rg-stat-icon red">
+                <XCircle :size="20" />
+              </div>
+              <div class="rg-stat-content">
+                <span class="rg-stat-label">Faltas / Justif.</span>
+                <span class="rg-stat-value text-red">{{ attendanceStats.faltas }} ({{ attendanceStats.faltasPct }}%)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- PAYMENTS DEDICATED EXPERIENCE BANNER -->
+          <div v-else-if="moduleType === 'payments'" class="registrations-stats-banner payments-banner">
+            <div class="rg-stat-card">
+              <div class="rg-stat-icon blue">
+                <CreditCard :size="20" />
+              </div>
+              <div class="rg-stat-content">
+                <span class="rg-stat-label">Total Recaudado</span>
+                <span class="rg-stat-value">${{ paymentsStats.totalPaidAmt.toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}</span>
+              </div>
+            </div>
+
+            <div class="rg-stat-card">
+              <div class="rg-stat-icon green">
+                <CheckCircle2 :size="20" />
+              </div>
+              <div class="rg-stat-content">
+                <span class="rg-stat-label">Pagos Realizados</span>
+                <span class="rg-stat-value text-green">{{ paymentsStats.paidCount }} pagos</span>
+              </div>
+            </div>
+
+            <div class="rg-stat-card">
+              <div class="rg-stat-icon amber">
+                <Clock :size="20" />
+              </div>
+              <div class="rg-stat-content">
+                <span class="rg-stat-label">Pendientes de Cobro</span>
+                <span class="rg-stat-value text-amber">${{ paymentsStats.totalPendingAmt.toLocaleString('es-MX', { minimumFractionDigits: 2 }) }} ({{ paymentsStats.pendingCount }})</span>
+              </div>
+            </div>
+
+            <div class="rg-stat-card">
+              <div class="rg-stat-icon red">
+                <AlertCircle :size="20" />
+              </div>
+              <div class="rg-stat-content">
+                <span class="rg-stat-label">Pagos Vencidos</span>
+                <span class="rg-stat-value text-red">${{ paymentsStats.totalOverdueAmt.toLocaleString('es-MX', { minimumFractionDigits: 2 }) }} ({{ paymentsStats.overdueCount }})</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- REGISTRATION SPECIAL CONTROLS (OR STANDARD TOOLBAR) -->
+          <div v-if="moduleType === 'registrations'" class="registration-controls-bar">
+            <!-- Search by person / workshop -->
+            <div class="search-box rg-search-box">
+              <Search :size="18" />
+              <input
+                v-model="search"
+                type="text"
+                placeholder="Buscar por nombre, apellidos, matrícula (ej. ALU-...), correo o taller..."
+              />
+              <button
+                v-if="search"
+                type="button"
+                class="input-clear"
+                @click="search = ''"
+              >
+                <X :size="14" />
+              </button>
+            </div>
+
+            <!-- Status Tabs -->
+            <div class="rg-status-tabs">
+              <button
+                type="button"
+                class="rg-tab-btn"
+                :class="{ active: registrationStatusFilter === 'ALL' }"
+                @click="registrationStatusFilter = 'ALL'"
+              >
+                Todas ({{ registrationStats.total }})
+              </button>
+              <button
+                type="button"
+                class="rg-tab-btn"
+                :class="{ active: registrationStatusFilter === 'ACTIVA' }"
+                @click="registrationStatusFilter = 'ACTIVA'"
+              >
+                Activas ({{ registrationStats.active }})
+              </button>
+              <button
+                type="button"
+                class="rg-tab-btn"
+                :class="{ active: registrationStatusFilter === 'BAJA' }"
+                @click="registrationStatusFilter = 'BAJA'"
+              >
+                Bajas ({{ registrationStats.bajas }})
+              </button>
+            </div>
+
+            <!-- Workshop Filter -->
+            <div class="rg-filter-select-wrapper">
+              <select v-model="registrationCourseFilter" class="rg-course-select">
+                <option value="ALL">Todos los talleres culturales</option>
+                <option v-for="c in data.cursos" :key="c.id" :value="c.id">
+                  {{ c.nombre }}
+                </option>
+              </select>
+            </div>
+
+            <button
+              class="secondary-button"
+              @click="exportToCsv"
+            >
+              <Download :size="17" />
+              Exportar CSV
+            </button>
+          </div>
+
+          <!-- ATTENDANCE SPECIAL CONTROLS -->
+          <div v-else-if="moduleType === 'attendance'" class="registration-controls-bar">
+            <!-- Search by student / matrícula / taller / fecha -->
+            <div class="search-box rg-search-box">
+              <Search :size="18" />
+              <input
+                v-model="search"
+                type="text"
+                placeholder="Buscar por alumno, matrícula (ej. ALU-...), taller o fecha..."
+              />
+              <button
+                v-if="search"
+                type="button"
+                class="input-clear"
+                @click="search = ''"
+              >
+                <X :size="14" />
+              </button>
+            </div>
+
+            <!-- Status Tabs -->
+            <div class="rg-status-tabs">
+              <button
+                type="button"
+                class="rg-tab-btn"
+                :class="{ active: attendanceStatusFilter === 'ALL' }"
+                @click="attendanceStatusFilter = 'ALL'"
+              >
+                Todas ({{ attendanceStats.total }})
+              </button>
+              <button
+                type="button"
+                class="rg-tab-btn"
+                :class="{ active: attendanceStatusFilter === 'PRESENTE' }"
+                @click="attendanceStatusFilter = 'PRESENTE'"
+              >
+                Presentes ({{ attendanceStats.presentes }})
+              </button>
+              <button
+                type="button"
+                class="rg-tab-btn"
+                :class="{ active: attendanceStatusFilter === 'RETARDO' }"
+                @click="attendanceStatusFilter = 'RETARDO'"
+              >
+                Retardos ({{ attendanceStats.retardos }})
+              </button>
+              <button
+                type="button"
+                class="rg-tab-btn"
+                :class="{ active: attendanceStatusFilter === 'FALTA' }"
+                @click="attendanceStatusFilter = 'FALTA'"
+              >
+                Faltas ({{ attendanceStats.faltas }})
+              </button>
+            </div>
+
+            <!-- Workshop Filter -->
+            <div class="rg-filter-select-wrapper">
+              <select v-model="attendanceCourseFilter" class="rg-course-select">
+                <option value="ALL">Todos los talleres</option>
+                <option v-for="c in data.cursos" :key="c.id" :value="c.id">
+                  {{ c.nombre }}
+                </option>
+              </select>
+            </div>
+
+            <!-- Date Filter & Quick Today -->
+            <div class="rg-filter-date-wrapper">
+              <input v-model="attendanceDateFilter" type="date" class="rg-date-input" title="Filtrar por fecha específica" />
+              <button v-if="attendanceDateFilter" type="button" class="btn-clear-date" title="Quitar filtro de fecha" @click="attendanceDateFilter = ''">
+                <X :size="12" />
+              </button>
+              <button
+                type="button"
+                class="btn-today-shortcut"
+                :class="{ active: attendanceDateFilter === todayDate }"
+                @click="attendanceDateFilter = attendanceDateFilter === todayDate ? '' : todayDate"
+              >
+                Hoy
+              </button>
+            </div>
+
+            <button
+              class="secondary-button"
+              @click="exportToCsv"
+            >
+              <Download :size="17" />
+              Exportar CSV
+            </button>
+          </div>
+
+          <!-- PAYMENTS SPECIAL CONTROLS -->
+          <div v-else-if="moduleType === 'payments'" class="registration-controls-bar">
+            <!-- Search by student / matrícula / concepto / taller / periodo -->
+            <div class="search-box rg-search-box">
+              <Search :size="18" />
+              <input
+                v-model="search"
+                type="text"
+                placeholder="Buscar por alumno, matrícula (ej. ALU-...), concepto, taller, periodo..."
+              />
+              <button
+                v-if="search"
+                type="button"
+                class="input-clear"
+                @click="search = ''"
+              >
+                <X :size="14" />
+              </button>
+            </div>
+
+            <!-- Status Tabs -->
+            <div class="rg-status-tabs">
+              <button
+                type="button"
+                class="rg-tab-btn"
+                :class="{ active: paymentStatusFilter === 'ALL' }"
+                @click="paymentStatusFilter = 'ALL'"
+              >
+                Todos ({{ paymentsStats.totalCount }})
+              </button>
+              <button
+                type="button"
+                class="rg-tab-btn"
+                :class="{ active: paymentStatusFilter === 'PAGADO' }"
+                @click="paymentStatusFilter = 'PAGADO'"
+              >
+                Pagados ({{ paymentsStats.paidCount }})
+              </button>
+              <button
+                type="button"
+                class="rg-tab-btn"
+                :class="{ active: paymentStatusFilter === 'PENDIENTE' }"
+                @click="paymentStatusFilter = 'PENDIENTE'"
+              >
+                Pendientes ({{ paymentsStats.pendingCount }})
+              </button>
+              <button
+                type="button"
+                class="rg-tab-btn"
+                :class="{ active: paymentStatusFilter === 'VENCIDO' }"
+                @click="paymentStatusFilter = 'VENCIDO'"
+              >
+                Vencidos ({{ paymentsStats.overdueCount }})
+              </button>
+            </div>
+
+            <!-- Concept Filter -->
+            <div class="rg-filter-select-wrapper">
+              <select v-model="paymentConceptFilter" class="rg-course-select">
+                <option value="ALL">Todos los conceptos</option>
+                <option value="INSCRIPCION">Inscripción</option>
+                <option value="MENSUALIDAD">Mensualidad</option>
+                <option value="RECARGO">Recargo / Trámite</option>
+              </select>
+            </div>
+
+            <!-- Workshop Filter -->
+            <div class="rg-filter-select-wrapper">
+              <select v-model="paymentCourseFilter" class="rg-course-select">
+                <option value="ALL">Todos los talleres</option>
+                <option v-for="c in data.cursos" :key="c.id" :value="c.id">
+                  {{ c.nombre }}
+                </option>
+              </select>
+            </div>
+
+            <button
+              class="secondary-button"
+              @click="exportToCsv"
+            >
+              <Download :size="17" />
+              Exportar CSV
+            </button>
+          </div>
+
+          <div v-else class="toolbar">
             <div class="search-box">
               <Search :size="18" />
               <input
@@ -2046,8 +3542,8 @@ const specialContent = computed(() => {
                     <span
                       class="status"
                       :class="{
-                        inactive: item.estado === 'INACTIVO' || item.estado === 'FALTA' || item.estado === 'VENCIDO',
-                        pending: item.estado === 'RETARDO' || item.estado === 'PENDIENTE'
+                        inactive: ['INACTIVO', 'FALTA', 'VENCIDO', 'BAJA'].includes(item.estado),
+                        pending: ['RETARDO', 'PENDIENTE'].includes(item.estado)
                       }"
                     >
                       {{ item.estado }}
@@ -2104,6 +3600,22 @@ const specialContent = computed(() => {
                       </button>
 
                       <button
+                        v-if="moduleType === 'registrations' && item.estado === 'ACTIVA'"
+                        class="delete-opt"
+                        @click="handleDeactivate('registration', item.id)"
+                      >
+                        <Trash2 :size="15" /> Dar de baja inscripción
+                      </button>
+
+                      <button
+                        v-if="moduleType === 'payments' && item.estado !== 'PAGADO'"
+                        @click="handleQuickMarkAsPaid(item.id)"
+                      >
+                        <Check :size="15" /> Marcar como Pagado
+                      </button>
+
+                      <button
+                        v-else-if="!['registrations', 'payments', 'attendance'].includes(moduleType)"
                         class="delete-opt"
                         @click="handleDeactivate(
                           moduleType === 'users' ? 'user' :
@@ -2163,7 +3675,7 @@ const specialContent = computed(() => {
       class="modal-overlay"
       @click.self="showModal = false"
     >
-      <div class="modal-card">
+      <div class="modal-card" :class="{ 'modal-card-wide': modalMode === 'add-schedule-group' || moduleType === 'schedules' || moduleType === 'registrations' || modalMode === 'create-full-workshop' }">
         <div class="modal-header">
           <h3>
             <template v-if="modalMode === 'create-full-workshop'">
@@ -2173,7 +3685,7 @@ const specialContent = computed(() => {
               Agregar Grupo a Taller: {{ formDirectGroup.nombreCurso }}
             </template>
             <template v-else-if="modalMode === 'add-schedule-group'">
-              Programar Horario: {{ formScheduleDirect.nombreGrupo }}
+              Programar Horarios: {{ formScheduleDirect.nombreGrupo }}
             </template>
             <template v-else-if="modalMode === 'assign-teacher-group'">
               Asignar Instructor: {{ formTeacherDirect.nombreGrupo }}
@@ -2538,63 +4050,146 @@ const specialContent = computed(() => {
             </template>
           </template>
 
-          <!-- 3. OPTION A: ADD SCHEDULE TO GROUP -->
+          <!-- 3. OPTION A: ADD SCHEDULE TO GROUP (MULTI-DAY / MULTI-SLOT BATCH) -->
           <template v-else-if="modalMode === 'add-schedule-group'">
             <div class="context-banner">
               <Clock :size="18" />
-              <span>Programando horario para: <strong>{{ formScheduleDirect.nombreGrupo }}</strong></span>
+              <span>Programando horarios para: <strong>{{ formScheduleDirect.nombreGrupo }}</strong></span>
             </div>
 
-            <div class="form-grid-3">
-              <div class="field">
-                <label>Día de la Semana *</label>
-                <select v-model="formScheduleDirect.dia">
-                  <option value="MONDAY">
-                    Lunes
-                  </option>
-                  <option value="TUESDAY">
-                    Martes
-                  </option>
-                  <option value="WEDNESDAY">
-                    Miércoles
-                  </option>
-                  <option value="THURSDAY">
-                    Jueves
-                  </option>
-                  <option value="FRIDAY">
-                    Viernes
-                  </option>
-                  <option value="SATURDAY">
-                    Sábado
-                  </option>
-                  <option value="SUNDAY">
-                    Domingo
-                  </option>
-                </select>
+            <div class="schedule-batch-container">
+              <div
+                v-for="(slot, idx) in formScheduleDirect.slots"
+                :key="idx"
+                class="schedule-slot-card"
+              >
+                <div class="slot-card-header">
+                  <div class="slot-badge">
+                    <CalendarDays :size="15" />
+                    <span>Bloque de Horario #{{ idx + 1 }}</span>
+                  </div>
+                  <button
+                    v-if="formScheduleDirect.slots.length > 1"
+                    type="button"
+                    class="btn-remove-slot"
+                    @click="removeSlotFromSchedule(formScheduleDirect, idx)"
+                    title="Eliminar este bloque"
+                  >
+                    <Trash2 :size="14" />
+                    <span>Quitar bloque</span>
+                  </button>
+                </div>
+
+                <!-- Presets chips -->
+                <div class="slot-presets">
+                  <span class="preset-label">Atajos rápidos:</span>
+                  <button
+                    type="button"
+                    class="preset-chip"
+                    @click="applySlotPreset(slot, 'MWF')"
+                  >
+                    Lun, Mié, Vie
+                  </button>
+                  <button
+                    type="button"
+                    class="preset-chip"
+                    @click="applySlotPreset(slot, 'TTH')"
+                  >
+                    Mar, Jue
+                  </button>
+                  <button
+                    type="button"
+                    class="preset-chip"
+                    @click="applySlotPreset(slot, 'WEEKDAYS')"
+                  >
+                    Lun a Vie
+                  </button>
+                  <button
+                    type="button"
+                    class="preset-chip"
+                    @click="applySlotPreset(slot, 'WEEKEND')"
+                  >
+                    Sáb y Dom
+                  </button>
+                  <button
+                    type="button"
+                    class="preset-chip"
+                    @click="applySlotPreset(slot, 'SAT')"
+                  >
+                    Solo Sábado
+                  </button>
+                </div>
+
+                <!-- Multi-Day Pills Selector -->
+                <div class="field">
+                  <label>Días de la semana para este horario *</label>
+                  <div class="days-pills-row">
+                    <button
+                      v-for="day in weekDaysList"
+                      :key="day.key"
+                      type="button"
+                      class="day-pill-btn"
+                      :class="{ 'active': slot.dias && slot.dias.includes(day.key) }"
+                      @click="toggleSlotDay(slot, day.key)"
+                    >
+                      <Check v-if="slot.dias && slot.dias.includes(day.key)" :size="13" class="pill-check-icon" />
+                      <span class="pill-day-label">{{ day.short }}</span>
+                      <span class="pill-day-full">{{ day.label }}</span>
+                    </button>
+                  </div>
+                  <span
+                    v-if="errors[`slot_${idx}_dias`]"
+                    class="error-text"
+                  >{{ errors[`slot_${idx}_dias`] }}</span>
+                </div>
+
+                <!-- Times row -->
+                <div class="form-grid-2">
+                  <div class="field">
+                    <label>Hora de Inicio *</label>
+                    <input
+                      v-model="slot.horaInicio"
+                      type="time"
+                      :class="{ 'has-error': errors[`slot_${idx}_inicio`] }"
+                    />
+                    <span
+                      v-if="errors[`slot_${idx}_inicio`]"
+                      class="error-text"
+                    >{{ errors[`slot_${idx}_inicio`] }}</span>
+                  </div>
+
+                  <div class="field">
+                    <label>Hora de Fin *</label>
+                    <input
+                      v-model="slot.horaFin"
+                      type="time"
+                      :class="{ 'has-error': errors[`slot_${idx}_fin`] }"
+                    />
+                    <span
+                      v-if="errors[`slot_${idx}_fin`]"
+                      class="error-text"
+                    >{{ errors[`slot_${idx}_fin`] }}</span>
+                  </div>
+                </div>
               </div>
-              <div class="field">
-                <label>Hora de Inicio *</label>
-                <input
-                  v-model="formScheduleDirect.horaInicio"
-                  type="time"
-                  :class="{ 'has-error': errors.horaInicio }"
-                />
-                <span
-                  v-if="errors.horaInicio"
-                  class="error-text"
-                >{{ errors.horaInicio }}</span>
-              </div>
-              <div class="field">
-                <label>Hora de Fin *</label>
-                <input
-                  v-model="formScheduleDirect.horaFin"
-                  type="time"
-                  :class="{ 'has-error': errors.horaFin }"
-                />
-                <span
-                  v-if="errors.horaFin"
-                  class="error-text"
-                >{{ errors.horaFin }}</span>
+
+              <!-- Add another slot button & summary -->
+              <div class="schedule-batch-footer">
+                <button
+                  type="button"
+                  class="btn-add-slot"
+                  @click="addSlotToSchedule(formScheduleDirect)"
+                >
+                  <Plus :size="16" />
+                  <span>Agregar otro bloque de horario (ej. fines de semana u otro turno)</span>
+                </button>
+
+                <div class="batch-summary-info">
+                  <Sparkles :size="16" />
+                  <span>
+                    Se programarán <strong>{{ countTotalSessions(formScheduleDirect.slots) }} sesión(es)</strong> en la base de datos en una sola operación.
+                  </span>
+                </div>
               </div>
             </div>
           </template>
@@ -2826,7 +4421,113 @@ const specialContent = computed(() => {
 
           <!-- USER FORM -->
           <template v-else-if="moduleType === 'users'">
-            <div class="field">
+            <!-- Tipo de Creación: Personal Administrativo vs Alumno/Docente -->
+            <div class="user-creation-type-toggle">
+              <button
+                type="button"
+                class="type-toggle-btn"
+                :class="{ active: userCreationType === 'admin' }"
+                @click="setUserCreationType('admin')"
+              >
+                <ShieldCheck :size="16" />
+                <div class="toggle-btn-text">
+                  <strong>Personal Administrativo</strong>
+                  <small>Supervisor o Super Admin</small>
+                </div>
+              </button>
+              <button
+                type="button"
+                class="type-toggle-btn"
+                :class="{ active: userCreationType === 'existing' }"
+                @click="setUserCreationType('existing')"
+              >
+                <UserCheck :size="16" />
+                <div class="toggle-btn-text">
+                  <strong>Vincular Existente</strong>
+                  <small>Alumno o Docente Registrado</small>
+                </div>
+              </button>
+            </div>
+
+            <!-- MODO 1: PERSONAL ADMINISTRATIVO (Campos de Persona Directos) -->
+            <div
+              v-if="userCreationType === 'admin'"
+              class="admin-person-section"
+            >
+              <div class="user-helper-banner">
+                <ShieldCheck :size="16" class="helper-icon" />
+                <span>Ingresa los datos personales del supervisor o administrador. Se creará automáticamente su registro en el sistema.</span>
+              </div>
+
+              <div class="form-grid-2">
+                <div class="field">
+                  <label>Nombre(s) *</label>
+                  <input
+                    v-model="formAdminPerson.nombre"
+                    type="text"
+                    maxlength="50"
+                    placeholder="Ej. Roberto"
+                    :class="{ 'has-error': errors.adminNombre }"
+                    @input="onAdminPersonNameInput"
+                  />
+                  <span
+                    v-if="errors.adminNombre"
+                    class="error-text"
+                  >{{ errors.adminNombre }}</span>
+                </div>
+                <div class="field">
+                  <label>Apellido Paterno *</label>
+                  <input
+                    v-model="formAdminPerson.apellidoPaterno"
+                    type="text"
+                    maxlength="50"
+                    placeholder="Ej. Gómez"
+                    :class="{ 'has-error': errors.adminApellidoPaterno }"
+                    @input="onAdminPersonNameInput"
+                  />
+                  <span
+                    v-if="errors.adminApellidoPaterno"
+                    class="error-text"
+                  >{{ errors.adminApellidoPaterno }}</span>
+                </div>
+              </div>
+
+              <div class="form-grid-3">
+                <div class="field">
+                  <label>Apellido Materno</label>
+                  <input
+                    v-model="formAdminPerson.apellidoMaterno"
+                    type="text"
+                    maxlength="50"
+                    placeholder="Ej. Morales"
+                  />
+                </div>
+                <div class="field">
+                  <label>Correo Electrónico</label>
+                  <input
+                    v-model="formAdminPerson.correo"
+                    type="email"
+                    maxlength="100"
+                    placeholder="ejemplo@casacultura.org"
+                  />
+                </div>
+                <div class="field">
+                  <label>Teléfono</label>
+                  <input
+                    v-model="formAdminPerson.telefono"
+                    type="tel"
+                    maxlength="15"
+                    placeholder="10 dígitos"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- MODO 2: VINCULAR ALUMNO O DOCENTE EXISTENTE -->
+            <div
+              v-else
+              class="field"
+            >
               <label>Persona Asociada (Alumno o Docente) *</label>
               <div
                 v-if="selectedPerson"
@@ -2927,7 +4628,7 @@ const specialContent = computed(() => {
                     v-if="filteredPersons.length === 0"
                     class="picker-no-results"
                   >
-                    <AlertCircle :size="16" /> No se encontraron personas con ese criterio.
+                    <AlertCircle :size="16" /> No se encontraron personas disponibles sin usuario.
                   </div>
                 </div>
               </div>
@@ -2937,23 +4638,8 @@ const specialContent = computed(() => {
               >{{ errors.personaId }}</span>
             </div>
 
+            <!-- CAMPOS COMUNES: ROL, NOMBRE DE USUARIO Y CONTRASEÑA -->
             <div class="form-grid-2">
-              <div class="field">
-                <label>Nombre de Usuario *</label>
-                <input
-                  :value="formUser.nombreUsuario"
-                  type="text"
-                  maxlength="80"
-                  placeholder="ej. juan.perez"
-                  :class="{ 'has-error': errors.nombreUsuario }"
-                  @input="filterUsernameInput($event, formUser, 'nombreUsuario')"
-                />
-                <span
-                  v-if="errors.nombreUsuario"
-                  class="error-text"
-                >{{ errors.nombreUsuario }}</span>
-              </div>
-
               <div class="field">
                 <label>Rol Asignado *</label>
                 <select
@@ -2975,6 +4661,22 @@ const specialContent = computed(() => {
                   v-if="errors.rolId"
                   class="error-text"
                 >{{ errors.rolId }}</span>
+              </div>
+
+              <div class="field">
+                <label>Nombre de Usuario *</label>
+                <input
+                  :value="formUser.nombreUsuario"
+                  type="text"
+                  maxlength="80"
+                  placeholder="ej. roberto.gomez"
+                  :class="{ 'has-error': errors.nombreUsuario }"
+                  @input="filterUsernameInput($event, formUser, 'nombreUsuario')"
+                />
+                <span
+                  v-if="errors.nombreUsuario"
+                  class="error-text"
+                >{{ errors.nombreUsuario }}</span>
               </div>
             </div>
 
@@ -3281,13 +4983,14 @@ const specialContent = computed(() => {
             </div>
           </template>
 
-          <!-- SCHEDULE FORM -->
+          <!-- SCHEDULE FORM (MULTI-DAY / MULTI-SLOT BATCH) -->
           <template v-else-if="moduleType === 'schedules'">
             <div class="field">
-              <label>Grupo Académico *</label>
+              <label>Grupo / Taller Académico *</label>
               <select
                 v-model="formSchedule.grupoId"
                 :class="{ 'has-error': errors.grupoId }"
+                @change="delete errors.grupoId"
               >
                 <option value="">
                   Selecciona un grupo
@@ -3306,99 +5009,257 @@ const specialContent = computed(() => {
               >{{ errors.grupoId }}</span>
             </div>
 
-            <div class="form-grid-3">
-              <div class="field">
-                <label>Día *</label>
-                <select v-model="formSchedule.dia">
-                  <option value="MONDAY">
-                    Lunes
-                  </option>
-                  <option value="TUESDAY">
-                    Martes
-                  </option>
-                  <option value="WEDNESDAY">
-                    Miércoles
-                  </option>
-                  <option value="THURSDAY">
-                    Jueves
-                  </option>
-                  <option value="FRIDAY">
-                    Viernes
-                  </option>
-                  <option value="SATURDAY">
-                    Sábado
-                  </option>
-                  <option value="SUNDAY">
-                    Domingo
-                  </option>
-                </select>
+            <div class="schedule-batch-container">
+              <div
+                v-for="(slot, idx) in formSchedule.slots"
+                :key="idx"
+                class="schedule-slot-card"
+              >
+                <div class="slot-card-header">
+                  <div class="slot-badge">
+                    <CalendarDays :size="15" />
+                    <span>Bloque de Horario #{{ idx + 1 }}</span>
+                  </div>
+                  <button
+                    v-if="formSchedule.slots.length > 1"
+                    type="button"
+                    class="btn-remove-slot"
+                    @click="removeSlotFromSchedule(formSchedule, idx)"
+                    title="Eliminar este bloque"
+                  >
+                    <Trash2 :size="14" />
+                    <span>Quitar bloque</span>
+                  </button>
+                </div>
+
+                <!-- Presets chips -->
+                <div class="slot-presets">
+                  <span class="preset-label">Atajos rápidos:</span>
+                  <button
+                    type="button"
+                    class="preset-chip"
+                    @click="applySlotPreset(slot, 'MWF')"
+                  >
+                    Lun, Mié, Vie
+                  </button>
+                  <button
+                    type="button"
+                    class="preset-chip"
+                    @click="applySlotPreset(slot, 'TTH')"
+                  >
+                    Mar, Jue
+                  </button>
+                  <button
+                    type="button"
+                    class="preset-chip"
+                    @click="applySlotPreset(slot, 'WEEKDAYS')"
+                  >
+                    Lun a Vie
+                  </button>
+                  <button
+                    type="button"
+                    class="preset-chip"
+                    @click="applySlotPreset(slot, 'WEEKEND')"
+                  >
+                    Sáb y Dom
+                  </button>
+                  <button
+                    type="button"
+                    class="preset-chip"
+                    @click="applySlotPreset(slot, 'SAT')"
+                  >
+                    Solo Sábado
+                  </button>
+                </div>
+
+                <!-- Multi-Day Pills Selector -->
+                <div class="field">
+                  <label>Días de la semana para este horario *</label>
+                  <div class="days-pills-row">
+                    <button
+                      v-for="day in weekDaysList"
+                      :key="day.key"
+                      type="button"
+                      class="day-pill-btn"
+                      :class="{ 'active': slot.dias && slot.dias.includes(day.key) }"
+                      @click="toggleSlotDay(slot, day.key)"
+                    >
+                      <Check v-if="slot.dias && slot.dias.includes(day.key)" :size="13" class="pill-check-icon" />
+                      <span class="pill-day-label">{{ day.short }}</span>
+                      <span class="pill-day-full">{{ day.label }}</span>
+                    </button>
+                  </div>
+                  <span
+                    v-if="errors[`slot_${idx}_dias`]"
+                    class="error-text"
+                  >{{ errors[`slot_${idx}_dias`] }}</span>
+                </div>
+
+                <!-- Times row -->
+                <div class="form-grid-2">
+                  <div class="field">
+                    <label>Hora de Inicio *</label>
+                    <input
+                      v-model="slot.horaInicio"
+                      type="time"
+                      :class="{ 'has-error': errors[`slot_${idx}_inicio`] }"
+                    />
+                    <span
+                      v-if="errors[`slot_${idx}_inicio`]"
+                      class="error-text"
+                    >{{ errors[`slot_${idx}_inicio`] }}</span>
+                  </div>
+
+                  <div class="field">
+                    <label>Hora de Fin *</label>
+                    <input
+                      v-model="slot.horaFin"
+                      type="time"
+                      :class="{ 'has-error': errors[`slot_${idx}_fin`] }"
+                    />
+                    <span
+                      v-if="errors[`slot_${idx}_fin`]"
+                      class="error-text"
+                    >{{ errors[`slot_${idx}_fin`] }}</span>
+                  </div>
+                </div>
               </div>
-              <div class="field">
-                <label>Hora Inicio *</label>
-                <input
-                  v-model="formSchedule.horaInicio"
-                  type="time"
-                  :class="{ 'has-error': errors.horaInicio }"
-                />
-                <span
-                  v-if="errors.horaInicio"
-                  class="error-text"
-                >{{ errors.horaInicio }}</span>
-              </div>
-              <div class="field">
-                <label>Hora Fin *</label>
-                <input
-                  v-model="formSchedule.horaFin"
-                  type="time"
-                  :class="{ 'has-error': errors.horaFin }"
-                />
-                <span
-                  v-if="errors.horaFin"
-                  class="error-text"
-                >{{ errors.horaFin }}</span>
+
+              <!-- Add another slot button & summary -->
+              <div class="schedule-batch-footer">
+                <button
+                  type="button"
+                  class="btn-add-slot"
+                  @click="addSlotToSchedule(formSchedule)"
+                >
+                  <Plus :size="16" />
+                  <span>Agregar otro bloque de horario (ej. fines de semana u otro turno)</span>
+                </button>
+
+                <div class="batch-summary-info">
+                  <Sparkles :size="16" />
+                  <span>
+                    Se programarán <strong>{{ countTotalSessions(formSchedule.slots) }} sesión(es)</strong> en la base de datos en una sola operación.
+                  </span>
+                </div>
               </div>
             </div>
           </template>
 
-          <!-- REGISTRATION / INSCRIPCION FORM -->
+          <!-- REGISTRATION / INSCRIPCION FORM (ENHANCED SEARCHABLE STUDENT PICKER) -->
           <template v-else-if="moduleType === 'registrations'">
+            <!-- Student Picker -->
             <div class="field">
               <label>Alumno a Inscribir *</label>
-              <select
-                v-model="formEnrollment.alumnoId"
-                :class="{ 'has-error': errors.alumnoId }"
+
+              <!-- Selected Student Card -->
+              <div
+                v-if="selectedEnrollmentStudent"
+                class="selected-person-card"
               >
-                <option value="">
-                  Selecciona un alumno
-                </option>
-                <option
-                  v-for="a in data.alumnos"
-                  :key="a.id"
-                  :value="a.id"
+                <div class="person-avatar">
+                  {{ selectedEnrollmentStudent.nombre.charAt(0).toUpperCase() }}
+                </div>
+                <div class="person-details">
+                  <div class="name-row">
+                    <strong>{{ selectedEnrollmentStudent.nombre }} {{ selectedEnrollmentStudent.apellidoPaterno }} {{ selectedEnrollmentStudent.apellidoMaterno || '' }}</strong>
+                    <span class="tag-badge tag-student">{{ selectedEnrollmentStudent.matricula }}</span>
+                  </div>
+                  <span>
+                    {{ selectedEnrollmentStudent.correo || 'Sin correo registrado' }}
+                    <template v-if="selectedEnrollmentStudent.telefono">&bull; Tel: {{ selectedEnrollmentStudent.telefono }}</template>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  class="clear-person-btn"
+                  @click="clearSelectedStudentForEnrollment"
                 >
-                  {{ a.matricula }} - {{ a.nombre }} {{ a.apellidoPaterno }}
-                </option>
-              </select>
+                  <X :size="14" /> Cambiar Alumno
+                </button>
+              </div>
+
+              <!-- Searchable Student Picker -->
+              <div
+                v-else
+                class="searchable-picker-container"
+              >
+                <div class="picker-search-bar">
+                  <div class="picker-search-input">
+                    <Search :size="15" />
+                    <input
+                      v-model="enrollmentStudentSearch"
+                      type="text"
+                      placeholder="Buscar por nombre, apellidos, matrícula o teléfono..."
+                    />
+                    <button
+                      v-if="enrollmentStudentSearch"
+                      type="button"
+                      class="input-clear"
+                      @click="enrollmentStudentSearch = ''"
+                    >
+                      <X :size="13" />
+                    </button>
+                  </div>
+                </div>
+
+                <div class="picker-results-list">
+                  <div
+                    v-for="a in filteredStudentsForEnrollment"
+                    :key="a.id"
+                    class="picker-item"
+                    @click="selectStudentForEnrollment(a)"
+                  >
+                    <div class="person-avatar small">
+                      {{ a.nombre.charAt(0).toUpperCase() }}
+                    </div>
+                    <div class="picker-item-info">
+                      <div class="name-row">
+                        <strong>{{ a.nombre }} {{ a.apellidoPaterno }} {{ a.apellidoMaterno || '' }}</strong>
+                        <span class="tag-badge tag-student">{{ a.matricula }}</span>
+                      </div>
+                      <small>
+                        {{ a.correo || 'Sin correo' }}
+                        <template v-if="a.telefono">&bull; {{ a.telefono }}</template>
+                      </small>
+                    </div>
+                    <Check
+                      :size="16"
+                      class="picker-select-icon"
+                    />
+                  </div>
+
+                  <div
+                    v-if="filteredStudentsForEnrollment.length === 0"
+                    class="picker-no-results"
+                  >
+                    <AlertCircle :size="16" /> No se encontraron alumnos con ese criterio de búsqueda.
+                  </div>
+                </div>
+              </div>
               <span
                 v-if="errors.alumnoId"
                 class="error-text"
               >{{ errors.alumnoId }}</span>
             </div>
+
+            <!-- Target Group Selector -->
             <div class="field">
               <label>Grupo / Taller Destino *</label>
               <select
                 v-model="formEnrollment.grupoId"
                 :class="{ 'has-error': errors.grupoId }"
+                @change="delete errors.grupoId"
               >
                 <option value="">
-                  Selecciona un grupo
+                  -- Selecciona un grupo de taller cultural --
                 </option>
                 <option
                   v-for="g in data.grupos"
                   :key="g.id"
                   :value="g.id"
                 >
-                  {{ g.nombreGrupo }} - {{ g.curso || 'Taller' }}
+                  {{ g.nombreGrupo }} ({{ g.curso || 'Taller Cultural' }})
                 </option>
               </select>
               <span
@@ -3406,27 +5267,132 @@ const specialContent = computed(() => {
                 class="error-text"
               >{{ errors.grupoId }}</span>
             </div>
+
+            <!-- Selected Group Preview Card -->
+            <div
+              v-if="selectedEnrollmentGroupInfo"
+              class="enrollment-group-preview"
+            >
+              <div class="preview-header">
+                <div>
+                  <h4 class="preview-title">{{ selectedEnrollmentGroupInfo.nombreCurso }} - {{ selectedEnrollmentGroupInfo.nombreGrupo }}</h4>
+                  <span class="preview-cat">Categoría: {{ selectedEnrollmentGroupInfo.nombreCategoria }} &bull; Instructor: {{ selectedEnrollmentGroupInfo.docenteName }}</span>
+                </div>
+                <span class="preview-capacity-badge">
+                  <Users :size="13" /> {{ selectedEnrollmentGroupInfo.enrolledCount }} alumnos activos
+                </span>
+              </div>
+
+              <!-- Schedules Preview -->
+              <div class="preview-schedules">
+                <span class="sched-label"><Clock :size="13" /> Horarios de clase asignados:</span>
+                <div v-if="selectedEnrollmentGroupInfo.schedules.length" class="sched-badges">
+                  <span
+                    v-for="(s, sIdx) in selectedEnrollmentGroupInfo.schedules"
+                    :key="sIdx"
+                    class="sched-pill"
+                  >
+                    <strong>{{ s.diaTexto }}</strong>: {{ s.rangoHorario }}
+                  </span>
+                </div>
+                <span v-else class="text-muted-small">Este grupo aún no tiene horarios semanales programados.</span>
+              </div>
+
+              <!-- Collision Warning Notification -->
+              <div class="conflict-check-note">
+                <ShieldCheck :size="15" />
+                <span>Validación automática: El sistema comprobará que no existan empalmes de horario con otras clases del alumno.</span>
+              </div>
+            </div>
           </template>
 
           <!-- ATTENDANCE FORM -->
           <template v-else-if="moduleType === 'attendance'">
             <div class="field">
-              <label>Inscripción (Alumno & Grupo) *</label>
-              <select
-                v-model="formAttendance.inscripcionId"
-                :class="{ 'has-error': errors.inscripcionId }"
+              <label>Alumno y Taller Inscrito *</label>
+
+              <!-- Selected Student Preview Card -->
+              <div
+                v-if="selectedAttendanceEnrollment"
+                class="selected-person-card"
               >
-                <option value="">
-                  Selecciona una inscripción
-                </option>
-                <option
-                  v-for="i in data.inscripciones"
-                  :key="i.id"
-                  :value="i.id"
+                <div class="person-avatar">
+                  {{ selectedAttendanceEnrollment.alumno ? selectedAttendanceEnrollment.alumno.charAt(0).toUpperCase() : 'A' }}
+                </div>
+                <div class="person-details">
+                  <div class="name-row">
+                    <strong>{{ selectedAttendanceEnrollment.alumno }}</strong>
+                    <span v-if="selectedAttendanceEnrollment.matricula" class="tag-badge tag-student">{{ selectedAttendanceEnrollment.matricula }}</span>
+                  </div>
+                  <span>
+                    {{ selectedAttendanceEnrollment.grupo }}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  class="clear-person-btn"
+                  @click="clearSelectedEnrollmentForAttendance"
                 >
-                  {{ i.matricula || i.alumno || 'Alumno' }} - {{ i.grupo || 'Grupo' }}
-                </option>
-              </select>
+                  <X :size="14" /> Cambiar Alumno
+                </button>
+              </div>
+
+              <!-- Searchable Student Picker -->
+              <div
+                v-else
+                class="searchable-picker-container"
+              >
+                <div class="picker-search-bar">
+                  <div class="picker-search-input">
+                    <Search :size="15" />
+                    <input
+                      v-model="attendanceStudentSearch"
+                      type="text"
+                      placeholder="Buscar por nombre, matrícula o taller cultural..."
+                    />
+                    <button
+                      v-if="attendanceStudentSearch"
+                      type="button"
+                      class="input-clear"
+                      @click="attendanceStudentSearch = ''"
+                    >
+                      <X :size="13" />
+                    </button>
+                  </div>
+                </div>
+
+                <div class="picker-results-list">
+                  <div
+                    v-for="item in filteredEnrollmentsForAttendance"
+                    :key="item.id"
+                    class="picker-item"
+                    @click="selectEnrollmentForAttendance(item)"
+                  >
+                    <div class="person-avatar small">
+                      {{ item.alumno ? item.alumno.charAt(0).toUpperCase() : 'A' }}
+                    </div>
+                    <div class="picker-item-info">
+                      <div class="name-row">
+                        <strong>{{ item.alumno }}</strong>
+                        <span v-if="item.matricula" class="tag-badge tag-student">{{ item.matricula }}</span>
+                      </div>
+                      <small>{{ item.grupo }}</small>
+                    </div>
+                    <Check
+                      :size="16"
+                      class="picker-select-icon"
+                    />
+                  </div>
+
+                  <div
+                    v-if="filteredEnrollmentsForAttendance.length === 0"
+                    class="picker-no-results"
+                  >
+                    <span>No se encontraron inscripciones que coincidan con la búsqueda.</span>
+                  </div>
+                </div>
+              </div>
+
               <span
                 v-if="errors.inscripcionId"
                 class="error-text"
@@ -3469,22 +5435,90 @@ const specialContent = computed(() => {
           <!-- PAYMENT FORM -->
           <template v-else-if="moduleType === 'payments'">
             <div class="field">
-              <label>Inscripción (Alumno & Taller) *</label>
-              <select
-                v-model="formPayment.inscripcionId"
-                :class="{ 'has-error': errors.inscripcionId }"
+              <label>Alumno y Taller a Cobrar *</label>
+
+              <!-- Selected Student Preview Card -->
+              <div
+                v-if="selectedPaymentEnrollment"
+                class="selected-person-card"
               >
-                <option value="">
-                  Selecciona una inscripción
-                </option>
-                <option
-                  v-for="i in data.inscripciones"
-                  :key="i.id"
-                  :value="i.id"
+                <div class="person-avatar">
+                  {{ selectedPaymentEnrollment.alumno ? selectedPaymentEnrollment.alumno.charAt(0).toUpperCase() : 'A' }}
+                </div>
+                <div class="person-details">
+                  <div class="name-row">
+                    <strong>{{ selectedPaymentEnrollment.alumno }}</strong>
+                    <span v-if="selectedPaymentEnrollment.matricula" class="tag-badge tag-student">{{ selectedPaymentEnrollment.matricula }}</span>
+                  </div>
+                  <span>
+                    {{ selectedPaymentEnrollment.grupo }}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  class="clear-person-btn"
+                  @click="clearSelectedEnrollmentForPayment"
                 >
-                  {{ i.matricula || i.alumno || 'Alumno' }} · {{ i.grupo || 'Grupo' }}
-                </option>
-              </select>
+                  <X :size="14" /> Cambiar Alumno
+                </button>
+              </div>
+
+              <!-- Searchable Student Picker -->
+              <div
+                v-else
+                class="searchable-picker-container"
+              >
+                <div class="picker-search-bar">
+                  <div class="picker-search-input">
+                    <Search :size="15" />
+                    <input
+                      v-model="paymentStudentSearch"
+                      type="text"
+                      placeholder="Buscar por nombre, matrícula o taller cultural..."
+                    />
+                    <button
+                      v-if="paymentStudentSearch"
+                      type="button"
+                      class="input-clear"
+                      @click="paymentStudentSearch = ''"
+                    >
+                      <X :size="13" />
+                    </button>
+                  </div>
+                </div>
+
+                <div class="picker-results-list">
+                  <div
+                    v-for="item in filteredEnrollmentsForPayment"
+                    :key="item.id"
+                    class="picker-item"
+                    @click="selectEnrollmentForPayment(item)"
+                  >
+                    <div class="person-avatar small">
+                      {{ item.alumno ? item.alumno.charAt(0).toUpperCase() : 'A' }}
+                    </div>
+                    <div class="picker-item-info">
+                      <div class="name-row">
+                        <strong>{{ item.alumno }}</strong>
+                        <span v-if="item.matricula" class="tag-badge tag-student">{{ item.matricula }}</span>
+                      </div>
+                      <small>{{ item.grupo }}</small>
+                    </div>
+                    <Check
+                      :size="16"
+                      class="picker-select-icon"
+                    />
+                  </div>
+
+                  <div
+                    v-if="filteredEnrollmentsForPayment.length === 0"
+                    class="picker-no-results"
+                  >
+                    <span>No se encontraron inscripciones que coincidan con la búsqueda.</span>
+                  </div>
+                </div>
+              </div>
+
               <span
                 v-if="errors.inscripcionId"
                 class="error-text"
@@ -3494,15 +5528,15 @@ const specialContent = computed(() => {
             <div class="form-grid-2">
               <div class="field">
                 <label>Concepto de Pago *</label>
-                <select v-model="formPayment.tipoPago">
+                <select v-model="formPayment.tipoPago" @change="onPaymentConceptChange">
                   <option value="INSCRIPCION">
-                    INSCRIPCIÓN
+                    INSCRIPCIÓN ($500.00 MXN)
                   </option>
                   <option value="MENSUALIDAD">
-                    MENSUALIDAD
+                    MENSUALIDAD ($400.00 MXN)
                   </option>
                   <option value="RECARGO">
-                    RECARGO / TRÁMITE
+                    RECARGO / TRÁMITE ($150.00 MXN)
                   </option>
                 </select>
               </div>
@@ -3544,13 +5578,13 @@ const specialContent = computed(() => {
                 <label>Estado del Pago *</label>
                 <select v-model="formPayment.estado">
                   <option value="PAGADO">
-                    PAGADO
+                    PAGADO (Completado)
                   </option>
                   <option value="PENDIENTE">
-                    PENDIENTE
+                    PENDIENTE (Por Cobrar)
                   </option>
                   <option value="VENCIDO">
-                    VENCIDO
+                    VENCIDO (En Mora)
                   </option>
                 </select>
               </div>
@@ -3588,7 +5622,7 @@ const specialContent = computed(() => {
               class="primary-button"
               :disabled="isSaving"
             >
-              {{ isSaving ? 'Guardando...' : 'Guardar Registro' }}
+              {{ isSaving ? 'Guardando...' : (modalMode === 'add-schedule-group' || moduleType === 'schedules' ? 'Guardar Todos los Horarios' : 'Guardar Registro') }}
             </button>
           </div>
         </form>
@@ -4484,6 +6518,523 @@ td {
   gap: 10px;
 }
 
+/* BATCH SCHEDULE STYLES */
+.schedule-batch-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.schedule-slot-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  transition: all 0.2s ease;
+}
+
+.schedule-slot-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+}
+
+.slot-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.slot-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #e0e7ff;
+  color: #4338ca;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.btn-remove-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px solid #fecaca;
+  color: #ef4444;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-remove-slot:hover {
+  background: #fef2f2;
+  border-color: #f87171;
+}
+
+.slot-presets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+}
+
+.preset-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.preset-chip {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  padding: 3px 9px;
+  border-radius: 14px;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.preset-chip:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+.days-pills-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.day-pill-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px;
+  border-radius: 8px;
+  border: 1.5px solid #e2e8f0;
+  background: #ffffff;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  user-select: none;
+}
+
+.day-pill-btn:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.day-pill-btn.active {
+  background: #4f46e5;
+  border-color: #4338ca;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.35);
+}
+
+.day-pill-btn .pill-day-label {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.day-pill-btn .pill-day-full {
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.day-pill-btn.active .pill-day-full {
+  opacity: 0.95;
+  color: #e0e7ff;
+}
+
+.pill-check-icon {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+}
+
+.schedule-batch-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.btn-add-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #4f46e5;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-add-slot:hover {
+  border-color: #6366f1;
+  background: #f5f7ff;
+  color: #4338ca;
+}
+
+.batch-summary-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  color: #065f46;
+  font-size: 12.5px;
+}
+
+/* REGISTRATIONS (INSCRIPCIONES) ENHANCED STYLES */
+.registrations-stats-banner {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.rg-stat-card {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.rg-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.rg-stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.rg-stat-icon.blue {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.rg-stat-icon.indigo {
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.rg-stat-icon.green {
+  background: #ecfdf5;
+  color: #10b981;
+}
+
+.rg-stat-icon.gray {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.rg-stat-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.rg-stat-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.rg-stat-value {
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.rg-stat-value.text-green {
+  color: #16a34a;
+}
+
+.rg-stat-value.text-gray {
+  color: #64748b;
+}
+
+.registration-controls-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+  background: white;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.rg-search-box {
+  flex: 1;
+  min-width: 280px;
+  position: relative;
+}
+
+.rg-search-box input {
+  width: 100%;
+}
+
+.rg-status-tabs {
+  display: flex;
+  background: #f1f5f9;
+  padding: 3px;
+  border-radius: 8px;
+  gap: 4px;
+}
+
+.rg-tab-btn {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.rg-tab-btn:hover {
+  color: #1e293b;
+}
+
+.rg-tab-btn.active {
+  background: white;
+  color: #4338ca;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.rg-filter-select-wrapper select {
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: white;
+  font-size: 13px;
+  color: #334155;
+  cursor: pointer;
+  outline: none;
+}
+
+.rg-stat-icon.amber {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.rg-stat-icon.red {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.rg-stat-value.text-amber {
+  color: #d97706;
+}
+
+.rg-stat-value.text-red {
+  color: #dc2626;
+}
+
+.rg-filter-select-wrapper select:focus {
+  border-color: #6366f1;
+}
+
+.rg-filter-date-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f8fafc;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+}
+
+.rg-date-input {
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: #1e293b;
+  outline: none;
+  font-family: inherit;
+}
+
+.btn-clear-date {
+  border: none;
+  background: #e2e8f0;
+  color: #64748b;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s;
+}
+
+.btn-clear-date:hover {
+  background: #cbd5e1;
+  color: #0f172a;
+}
+
+.btn-today-shortcut {
+  border: 1px solid #cbd5e1;
+  background: white;
+  color: #475569;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-today-shortcut:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.btn-today-shortcut.active {
+  background: #4338ca;
+  color: white;
+  border-color: #4338ca;
+}
+
+/* ENROLLMENT GROUP PREVIEW */
+.enrollment-group-preview {
+  margin-top: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.preview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.preview-title {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.preview-cat {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.preview-capacity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  background: #e0e7ff;
+  color: #3730a3;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.preview-schedules {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sched-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.sched-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sched-pill {
+  display: inline-block;
+  background: white;
+  border: 1px solid #cbd5e1;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #334155;
+}
+
+.sched-pill strong {
+  color: #4338ca;
+}
+
+.conflict-check-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  color: #166534;
+  font-size: 11px;
+  font-weight: 500;
+}
+
 /* SPECIAL VIEW */
 .special-panel h2 {
   margin-top: 0;
@@ -4713,6 +7264,10 @@ td {
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+.modal-card.modal-card-wide {
+  width: min(720px, 100%);
 }
 
 .modal-header {
@@ -5049,6 +7604,85 @@ td {
   font-size: 12px;
 }
 
+/* USER CREATION TYPE TOGGLE */
+.user-creation-type-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.type-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+  color: #64748b;
+}
+
+.type-toggle-btn:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.type-toggle-btn.active {
+  background: #eff6ff;
+  border-color: #3b82f6;
+  color: #1d4ed8;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.12);
+}
+
+.toggle-btn-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toggle-btn-text strong {
+  font-size: 13px;
+  color: #1e293b;
+}
+
+.type-toggle-btn.active .toggle-btn-text strong {
+  color: #1e40af;
+}
+
+.toggle-btn-text small {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.admin-person-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.user-helper-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  color: #166534;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.user-helper-banner .helper-icon {
+  flex-shrink: 0;
+  color: #16a34a;
+}
+
 /* CREDENTIAL PREVIEW */
 .credential-preview {
   border: 2px solid #4051a3;
@@ -5190,6 +7824,10 @@ td {
     gap: 0;
   }
 
+  .days-pills-row {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
   .course-header-bar {
     flex-direction: column;
     align-items: flex-start;
@@ -5200,5 +7838,650 @@ td {
     width: 100%;
     justify-content: space-between;
   }
+}
+
+/* ======================================================== */
+/* SCHEDULES (HORARIOS) EXPERIENCE STYLES                   */
+/* ======================================================== */
+.schedules-stats-banner {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.sc-stat-item {
+  background: #ffffff;
+  border: 1px solid #e9ecf5;
+  border-radius: 14px;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+}
+
+.sc-stat-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sc-stat-icon.calendar-icon { background: #eff6ff; color: #3b82f6; }
+.sc-stat-icon.group-icon { background: #f5f3ff; color: #8b5cf6; }
+.sc-stat-icon.hours-icon { background: #ecfdf5; color: #10b981; }
+.sc-stat-icon.peak-icon { background: #fffbeb; color: #f59e0b; }
+
+.sc-stat-info strong {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1e293b;
+  display: block;
+}
+
+.sc-stat-info span {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.schedules-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.schedules-filters-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.filter-select-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0 12px;
+  height: 42px;
+}
+
+.filter-select-wrapper .select-icon {
+  color: #64748b;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.filter-select {
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: #334155;
+  outline: none;
+  cursor: pointer;
+  padding-right: 8px;
+}
+
+.schedules-controls-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.view-mode-toggle {
+  display: flex;
+  background: #e2e8f0;
+  border-radius: 10px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-btn.active {
+  background: #ffffff;
+  color: #4051a3;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+/* 1. TIMETABLE GRID */
+.calendar-timetable-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(185px, 1fr));
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 20px;
+}
+
+.day-column {
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #e9ecf5;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+  min-height: 480px;
+  transition: all 0.2s;
+}
+
+.day-column.is-today {
+  border-color: #6366f1;
+  box-shadow: 0 4px 18px rgba(99, 102, 241, 0.12);
+}
+
+.day-column-header {
+  padding: 14px 14px 10px;
+  background: #f8fafc;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.day-column.is-today .day-column-header {
+  background: #eff6ff;
+  border-bottom-color: #dbeafe;
+}
+
+.day-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.day-short {
+  font-size: 11px;
+  font-weight: 800;
+  background: #e2e8f0;
+  color: #475569;
+  padding: 2px 6px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.day-column.is-today .day-short {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.day-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.today-badge {
+  font-size: 10px;
+  font-weight: 800;
+  background: #dbeafe;
+  color: #1d4ed8;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.day-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sessions-counter {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.quick-add-day-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.quick-add-day-btn:hover {
+  background: #4051a3;
+  color: #ffffff;
+  border-color: #4051a3;
+}
+
+.day-sessions-container {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+
+.session-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid var(--accent-color, #6366f1);
+  border-radius: 10px;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s;
+}
+
+.session-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.07);
+  border-color: #cbd5e1;
+  border-left-color: var(--accent-color, #6366f1);
+}
+
+.session-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+}
+
+.time-range-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #1e293b;
+  background: #f1f5f9;
+  padding: 3px 7px;
+  border-radius: 6px;
+}
+
+.duration-pill {
+  font-size: 10px;
+  font-weight: 600;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.session-course-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.25;
+  margin-top: 2px;
+}
+
+.session-group-name {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.session-card-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed #f1f5f9;
+}
+
+.session-teacher {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+}
+
+.session-delete-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.session-delete-btn:hover {
+  color: #ef4444;
+  background: #fee2e2;
+}
+
+.empty-day-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 30px 10px;
+  color: #94a3b8;
+  flex: 1;
+}
+
+.empty-day-icon {
+  color: #cbd5e1;
+}
+
+.empty-day-state span {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.empty-day-add-link {
+  font-size: 11px;
+  font-weight: 600;
+  color: #4051a3;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.empty-day-add-link:hover {
+  text-decoration: underline;
+}
+
+/* 2. GROUP SCHEDULE CARDS */
+.groups-schedules-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.group-schedule-card {
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #e9ecf5;
+  padding: 20px 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.group-schedule-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.group-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.group-course-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4051a3;
+  background: #eef2ff;
+  padding: 3px 10px;
+  border-radius: 6px;
+  width: fit-content;
+}
+
+.group-schedule-card h4 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.group-meta-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.meta-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.meta-chip.category { background: #f1f5f9; color: #475569; }
+.meta-chip.teacher { background: #ecfdf5; color: #047857; }
+.meta-chip.students { background: #f5f3ff; color: #6d28d9; }
+
+.add-schedule-to-group-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  color: #4051a3;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.add-schedule-to-group-btn:hover {
+  background: #4051a3;
+  color: #ffffff;
+}
+
+.group-schedules-body {
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.schedule-slots-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.schedule-slots-title strong {
+  color: #1e293b;
+}
+
+.schedule-slots-flex {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.schedule-slot-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+
+.slot-day-badge {
+  font-size: 11px;
+  font-weight: 700;
+  background: #e0e7ff;
+  color: #3730a3;
+  padding: 2px 7px;
+  border-radius: 5px;
+}
+
+.slot-time-range {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.slot-remove-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.slot-remove-btn:hover {
+  color: #ef4444;
+  background: #fee2e2;
+}
+
+.group-no-schedules-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  padding: 10px 14px;
+  border-radius: 8px;
+}
+
+.assign-now-link {
+  font-weight: 700;
+  color: #b45309;
+  background: transparent;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+/* 3. TABLE BADGES & CELLS */
+.course-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.course-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.group-badge-cell {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  background: #f1f5f9;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.day-tag-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 6px;
+  display: inline-block;
+}
+
+.day-tag-badge.monday { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.day-tag-badge.tuesday { background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; }
+.day-tag-badge.wednesday { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.day-tag-badge.thursday { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+.day-tag-badge.friday { background: #fdf2f8; color: #be185d; border: 1px solid #fbcfe8; }
+.day-tag-badge.saturday { background: #ecfeff; color: #0e7490; border: 1px solid #a5f3fc; }
+.day-tag-badge.sunday { background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; }
+
+.time-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.duration-cell {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.action-button-danger {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.action-button-danger:hover {
+  color: #ef4444;
+  background: #fee2e2;
 }
 </style>
