@@ -1,11 +1,15 @@
 spring:
   application:
     name: casa-cultura-api
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
   jpa:
     hibernate:
       ddl-auto: update
     open-in-view: false
-  liquibase:    
+  liquibase:
     enabled: false
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/CasaCultura}
@@ -31,3 +35,7 @@ demo-data:
   enabled: ${DEMO_DATA_ENABLED:false}
 attendance:
   absence-check-ms: ${ATTENDANCE_ABSENCE_CHECK_MS:60000}
+app:
+  upload:
+    dir: ${UPLOAD_DIR:./uploads}
+

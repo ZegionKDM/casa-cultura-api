@@ -32,4 +32,7 @@ public class DocenteRequest {
     @NotBlank(message = "La especialidad es obligatoria")
     @Size(max = 120, message = "La especialidad no debe superar 120 caracteres")
     private String especialidad;
+
+    @Size(max = 500, message = "La URL de la foto no debe superar 500 caracteres")
+    private String fotoUrl;
 }

@@ -1,10 +1,31 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import LoginView from '../views/LoginView.vue'
-import StudentView from '../views/StudentView.vue'
-import SupervisorView from '../views/SupervisorView.vue'
-import DocenteView from '../views/DocenteView.vue'
-import AdminDashboardView from '../views/admin/AdminDashboardView.vue'
-import AdminModuleView from '../views/admin/AdminModuleView.vue'
+
+// Layouts
+import AdminLayout from '../layouts/AdminLayout.vue'
+
+// Auth Feature
+import LoginView from '../features/auth/views/LoginView.vue'
+
+// Role Portals
+import StudentPortalView from '../features/alumnos/views/StudentPortalView.vue'
+import SupervisorPortalView from '../features/supervisor/views/SupervisorPortalView.vue'
+import DocentePortalView from '../features/docentes/views/DocentePortalView.vue'
+
+// Admin Features
+import AdminDashboardView from '../features/dashboard/views/AdminDashboardView.vue'
+import AdminUsuariosView from '../features/usuarios/views/AdminUsuariosView.vue'
+import AdminRolesView from '../features/usuarios/views/AdminRolesView.vue'
+import AdminAlumnosView from '../features/alumnos/views/AdminAlumnosView.vue'
+import AdminDocentesView from '../features/docentes/views/AdminDocentesView.vue'
+import AdminTalleresView from '../features/talleres/views/AdminTalleresView.vue'
+import AdminHorariosView from '../features/horarios/views/AdminHorariosView.vue'
+import AdminInscripcionesView from '../features/inscripciones/views/AdminInscripcionesView.vue'
+import AdminAsistenciasView from '../features/asistencias/views/AdminAsistenciasView.vue'
+import AdminPagosView from '../features/pagos/views/AdminPagosView.vue'
+import AdminMonetizacionView from '../features/reportes/views/AdminMonetizacionView.vue'
+import AdminReportesView from '../features/reportes/views/AdminReportesView.vue'
+import AdminConfiguracionView from '../features/reportes/views/AdminConfiguracionView.vue'
+import AdminBitacoraView from '../features/reportes/views/AdminBitacoraView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -17,17 +38,17 @@ const router = createRouter({
     {
       path: '/alumno',
       name: 'student',
-      component: StudentView,
+      component: StudentPortalView,
     },
     {
       path: '/supervisor',
       name: 'supervisor',
-      component: SupervisorView,
+      component: SupervisorPortalView,
     },
     {
       path: '/docente',
       name: 'docente',
-      component: DocenteView,
+      component: DocentePortalView,
       meta: {
         title: 'Portal del Docente',
         subtitle: 'Panel de Control e Instrucción',
@@ -40,163 +61,167 @@ const router = createRouter({
     },
     {
       path: '/admin',
+      component: AdminLayout,
       redirect: '/admin/dashboard',
-    },
-    {
-      path: '/admin/dashboard',
-      name: 'admin-dashboard',
-      component: AdminDashboardView,
-      meta: {
-        title: 'Dashboard',
-        subtitle: 'Panel de Control Principal',
-        type: 'dashboard',
-        requiresAdmin: true
-      }
-    },
-    {
-      path: '/admin/usuarios',
-      name: 'admin-users',
-      component: AdminModuleView,
-      meta: {
-        title: 'Usuarios',
-        subtitle: 'Gestión de cuentas y accesos del sistema',
-        type: 'users',
-        requiresAdmin: true
-      }
-    },
-    {
-      path: '/admin/roles',
-      name: 'admin-roles',
-      component: AdminModuleView,
-      meta: {
-        title: 'Roles y Permisos',
-        subtitle: 'Control de accesos y permisos',
-        type: 'roles',
-        requiresAdmin: true
-      }
-    },
-    {
-      path: '/admin/alumnos',
-      name: 'admin-students',
-      component: AdminModuleView,
-      meta: {
-        title: 'Alumnos',
-        subtitle: 'Padrón de estudiantes inscritos',
-        type: 'students',
-        requiresAdmin: true
-      }
-    },
-    {
-      path: '/admin/docentes',
-      name: 'admin-teachers',
-      component: AdminModuleView,
-      meta: {
-        title: 'Docentes',
-        subtitle: 'Plantilla de instructores y talleristas',
-        type: 'teachers',
-        requiresAdmin: true
-      }
-    },
-    {
-      path: '/admin/talleres',
-      name: 'admin-workshops',
-      component: AdminModuleView,
-      meta: {
-        title: 'Talleres',
-        subtitle: 'Cursos y talleres culturales ofertados',
-        type: 'workshops',
-        requiresAdmin: true
-      }
-    },
-    {
-      path: '/admin/horarios',
-      name: 'admin-schedules',
-      component: AdminModuleView,
-      meta: {
-        title: 'Horarios',
-        subtitle: 'Programación semanal de talleres',
-        type: 'schedules',
-        requiresAdmin: true
-      }
-    },
-    {
-      path: '/admin/inscripciones',
-      name: 'admin-registrations',
-      component: AdminModuleView,
-      meta: {
-        title: 'Inscripciones',
-        subtitle: 'Control de matrículas en grupos',
-        type: 'registrations',
-        requiresAdmin: true
-      }
-    },
-    {
-      path: '/admin/asistencias',
-      name: 'admin-attendance',
-      component: AdminModuleView,
-      meta: {
-        title: 'Asistencias',
-        subtitle: 'Registro diario y control de faltas',
-        type: 'attendance',
-        requiresAdmin: true
-      }
-    },
-    {
-      path: '/admin/pagos',
-      name: 'admin-payments',
-      component: AdminModuleView,
-      meta: {
-        title: 'Pagos',
-        subtitle: 'Control de cuotas y mensualidades',
-        type: 'payments',
-        requiresAdmin: true
-      }
-    },
-    {
-      path: '/admin/monetizacion',
-      name: 'admin-monetization',
-      component: AdminModuleView,
-      meta: {
-        title: 'Monetización',
-        subtitle: 'Ingresos y finanzas del centro cultural',
-        type: 'monetization',
-        requiresAdmin: true
-      }
-    },
-    {
-      path: '/admin/reportes',
-      name: 'admin-reports',
-      component: AdminModuleView,
-      meta: {
-        title: 'Reportes y Gráficas',
-        subtitle: 'Estadísticas e informes analíticos',
-        type: 'reports',
-        requiresAdmin: true
-      }
-    },
-    {
-      path: '/admin/configuracion',
-      name: 'admin-settings',
-      component: AdminModuleView,
-      meta: {
-        title: 'Configuración',
-        subtitle: 'Parámetros generales de la institución',
-        type: 'settings',
-        requiresAdmin: true
-      }
-    },
-    {
-      path: '/admin/bitacora',
-      name: 'admin-logs',
-      component: AdminModuleView,
-      meta: {
-        title: 'Bitácora de Actividad',
-        subtitle: 'Auditoría y registro de eventos',
-        type: 'logs',
-        requiresAdmin: true
-      }
+      meta: { requiresAdmin: true },
+      children: [
+        {
+          path: 'dashboard',
+          name: 'admin-dashboard',
+          component: AdminDashboardView,
+          meta: {
+            title: 'Dashboard',
+            subtitle: 'Panel de Control Principal',
+            type: 'dashboard',
+            requiresAdmin: true
+          }
+        },
+        {
+          path: 'usuarios',
+          name: 'admin-users',
+          component: AdminUsuariosView,
+          meta: {
+            title: 'Usuarios',
+            subtitle: 'Gestión de cuentas y accesos del sistema',
+            type: 'users',
+            requiresAdmin: true
+          }
+        },
+        {
+          path: 'roles',
+          name: 'admin-roles',
+          component: AdminRolesView,
+          meta: {
+            title: 'Roles y Permisos',
+            subtitle: 'Control de accesos y permisos',
+            type: 'roles',
+            requiresAdmin: true
+          }
+        },
+        {
+          path: 'alumnos',
+          name: 'admin-students',
+          component: AdminAlumnosView,
+          meta: {
+            title: 'Alumnos',
+            subtitle: 'Padrón de estudiantes inscritos',
+            type: 'students',
+            requiresAdmin: true
+          }
+        },
+        {
+          path: 'docentes',
+          name: 'admin-teachers',
+          component: AdminDocentesView,
+          meta: {
+            title: 'Docentes',
+            subtitle: 'Plantilla de instructores y talleristas',
+            type: 'teachers',
+            requiresAdmin: true
+          }
+        },
+        {
+          path: 'talleres',
+          name: 'admin-workshops',
+          component: AdminTalleresView,
+          meta: {
+            title: 'Talleres',
+            subtitle: 'Cursos y talleres culturales ofertados',
+            type: 'workshops',
+            requiresAdmin: true
+          }
+        },
+        {
+          path: 'horarios',
+          name: 'admin-schedules',
+          component: AdminHorariosView,
+          meta: {
+            title: 'Horarios',
+            subtitle: 'Programación semanal de talleres',
+            type: 'schedules',
+            requiresAdmin: true
+          }
+        },
+        {
+          path: 'inscripciones',
+          name: 'admin-registrations',
+          component: AdminInscripcionesView,
+          meta: {
+            title: 'Inscripciones',
+            subtitle: 'Control de matrículas en grupos',
+            type: 'registrations',
+            requiresAdmin: true
+          }
+        },
+        {
+          path: 'asistencias',
+          name: 'admin-attendance',
+          component: AdminAsistenciasView,
+          meta: {
+            title: 'Asistencias',
+            subtitle: 'Registro diario y control de faltas',
+            type: 'attendance',
+            requiresAdmin: true
+          }
+        },
+        {
+          path: 'pagos',
+          name: 'admin-payments',
+          component: AdminPagosView,
+          meta: {
+            title: 'Pagos',
+            subtitle: 'Control de cuotas y mensualidades',
+            type: 'payments',
+            requiresAdmin: true
+          }
+        },
+        {
+          path: 'monetizacion',
+          name: 'admin-monetization',
+          component: AdminMonetizacionView,
+          meta: {
+            title: 'Monetización',
+            subtitle: 'Ingresos y finanzas del centro cultural',
+            type: 'monetization',
+            requiresAdmin: true
+          }
+        },
+        {
+          path: 'reportes',
+          name: 'admin-reports',
+          component: AdminReportesView,
+          meta: {
+            title: 'Reportes y Gráficas',
+            subtitle: 'Estadísticas e informes analíticos',
+            type: 'reports',
+            requiresAdmin: true
+          }
+        },
+        {
+          path: 'configuracion',
+          name: 'admin-settings',
+          component: AdminConfiguracionView,
+          meta: {
+            title: 'Configuración',
+            subtitle: 'Parámetros generales de la institución',
+            type: 'settings',
+            requiresAdmin: true
+          }
+        },
+        {
+          path: 'bitacora',
+          name: 'admin-logs',
+          component: AdminBitacoraView,
+          meta: {
+            title: 'Bitácora de Actividad',
+            subtitle: 'Auditoría y registro de eventos',
+            type: 'logs',
+            requiresAdmin: true
+          }
+        }
+      ]
     }
-  ],
+  ]
 })
 
 function getStoredUser() {

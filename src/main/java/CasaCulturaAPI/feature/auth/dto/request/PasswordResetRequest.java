@@ -9,4 +9,7 @@ public class PasswordResetRequest {
     @NotBlank
     @Size(min = 8, max = 100)
     private String passwordNueva;
+
+    private Boolean debeCambiarPassword;
 }
+

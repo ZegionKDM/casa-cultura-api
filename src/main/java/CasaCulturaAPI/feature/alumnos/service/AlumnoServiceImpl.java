@@ -38,6 +38,7 @@ public class AlumnoServiceImpl implements AlumnoService {
     private final DocenteRepository docenteRepository;
     private final InscripcionRepository inscripcionRepository;
     private final UsuarioRepository usuarioRepository;
+    private final CasaCulturaAPI.shared.service.FileStorageService fileStorageService;
 
     @Override
     @Transactional
@@ -145,6 +146,23 @@ public class AlumnoServiceImpl implements AlumnoService {
         Alumno alumno = find(id);
         alumno.setEstado(EstadoRegistro.INACTIVO);
         alumnoRepository.save(alumno);
+    }
+
+    @Override
+    @Transactional
+    public String actualizarFoto(Long id, org.springframework.web.multipart.MultipartFile archivo) {
+        Alumno alumno = find(id);
+        Persona persona = alumno.getPersona();
+        String fotoAnterior = persona.getFotoUrl();
+        String nuevaUrl = fileStorageService.guardarFoto(archivo, "alumnos");
+        persona.setFotoUrl(nuevaUrl);
+        personaRepository.save(persona);
+
+        if (fotoAnterior != null && !fotoAnterior.equals(nuevaUrl)) {
+            fileStorageService.eliminarArchivo(fotoAnterior);
+        }
+
+        return nuevaUrl;
     }
 
     private Alumno find(Long id) {

@@ -2,6 +2,7 @@ package CasaCulturaAPI.feature.auth.service;
 
 import CasaCulturaAPI.feature.auth.dto.request.UsuarioRequest;
 import CasaCulturaAPI.feature.auth.dto.request.PasswordChangeRequest;
+import CasaCulturaAPI.feature.auth.dto.request.PasswordResetRequest;
 import CasaCulturaAPI.feature.auth.dto.response.UsuarioResponse;
 import CasaCulturaAPI.shared.entity.*;
 import CasaCulturaAPI.exception.ResourceNotFoundException;
@@ -114,6 +115,20 @@ public class UsuarioAccountServiceImpl implements UsuarioAccountService {
         }
         usuario.setPasswordHash(passwordEncoder.encode(request.getPasswordNueva()));
         usuario.setDebeCambiarPassword(false);
+        usuarioRepository.save(usuario);
+    }
+
+    @Override
+    @Transactional
+    public void resetPassword(Long id, PasswordResetRequest request) {
+        Usuario usuario = usuarioRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado."));
+        usuario.setPasswordHash(passwordEncoder.encode(request.getPasswordNueva()));
+        if (request.getDebeCambiarPassword() != null) {
+            usuario.setDebeCambiarPassword(request.getDebeCambiarPassword());
+        } else {
+            usuario.setDebeCambiarPassword(false);
+        }
         usuarioRepository.save(usuario);
     }
 

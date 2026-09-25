@@ -23,7 +23,8 @@ public class DocenteServiceImpl implements DocenteService {
     public DocenteResponse crear(DocenteRequest request) {
         Persona persona = personaRepository.save(Persona.builder().nombre(request.getNombre())
                 .apellidoPaterno(request.getApellidoPaterno()).apellidoMaterno(request.getApellidoMaterno())
-                .telefono(request.getTelefono()).direccion(request.getDireccion()).correo(request.getCorreo()).build());
+                .telefono(request.getTelefono()).direccion(request.getDireccion()).correo(request.getCorreo())
+                .fotoUrl(request.getFotoUrl()).build());
         return toResponse(docenteRepository.save(Docente.builder().persona(persona)
                 .especialidad(request.getEspecialidad()).build()));
     }
@@ -42,6 +43,9 @@ public class DocenteServiceImpl implements DocenteService {
         persona.setTelefono(request.getTelefono());
         persona.setDireccion(request.getDireccion());
         persona.setCorreo(request.getCorreo());
+        if (request.getFotoUrl() != null) {
+            persona.setFotoUrl(request.getFotoUrl());
+        }
         docente.setEspecialidad(request.getEspecialidad());
         personaRepository.save(persona);
         return toResponse(docenteRepository.save(docente));
@@ -58,6 +62,7 @@ public class DocenteServiceImpl implements DocenteService {
         return DocenteResponse.builder().id(x.getId()).personaId(p.getId()).nombre(p.getNombre())
                 .apellidoPaterno(p.getApellidoPaterno()).apellidoMaterno(p.getApellidoMaterno())
                 .telefono(p.getTelefono()).direccion(p.getDireccion()).correo(p.getCorreo())
+                .fotoUrl(p.getFotoUrl())
                 .especialidad(x.getEspecialidad()).estado(x.getEstado()).build();
     }
 }

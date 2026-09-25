@@ -2,6 +2,7 @@ package CasaCulturaAPI.feature.auth.service;
 
 import CasaCulturaAPI.feature.auth.dto.request.UsuarioRequest;
 import CasaCulturaAPI.feature.auth.dto.request.PasswordChangeRequest;
+import CasaCulturaAPI.feature.auth.dto.request.PasswordResetRequest;
 import CasaCulturaAPI.feature.auth.dto.response.UsuarioResponse;
 
 import java.util.List;
@@ -12,4 +13,6 @@ public interface UsuarioAccountService {
     List<UsuarioResponse> listar();
     void desactivar(Long id);
     void cambiarPassword(String nombreUsuario, PasswordChangeRequest request);
+    void resetPassword(Long id, PasswordResetRequest request);
 }
+

@@ -3,6 +3,7 @@ package CasaCulturaAPI.feature.auth.controller;
 import CasaCulturaAPI.feature.auth.dto.request.UsuarioRequest;
 import CasaCulturaAPI.feature.auth.dto.request.LoginRequest;
 import CasaCulturaAPI.feature.auth.dto.request.PasswordChangeRequest;
+import CasaCulturaAPI.feature.auth.dto.request.PasswordResetRequest;
 import CasaCulturaAPI.shared.dto.ApiResponse;
 import CasaCulturaAPI.feature.auth.service.UsuarioAccountService;
 import CasaCulturaAPI.feature.auth.service.AuthService;
@@ -46,6 +47,14 @@ public class AuthController {
     public ResponseEntity<ApiResponse<?>> deactivateUser(@PathVariable Long id) {
         service.desactivar(id);
         return ResponseEntity.ok(new ApiResponse<>(true, "Usuario desactivado.", null));
+    }
+
+    @PutMapping("/usuarios/{id}/password")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<?>> resetPassword(
+            @PathVariable Long id, @Valid @RequestBody PasswordResetRequest request) {
+        service.resetPassword(id, request);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Contraseña actualizada.", null));
     }
 
     @GetMapping("/me")

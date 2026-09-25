@@ -32,7 +32,7 @@ public class SecurityConfig {
         http.csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/", "/health", "/actuator/health", "/api/v1/auth/login", "/error").permitAll()
+                        .requestMatchers("/", "/health", "/actuator/health", "/api/v1/auth/login", "/error", "/uploads/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(
                         new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))

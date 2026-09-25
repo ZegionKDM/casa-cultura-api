@@ -14,4 +14,5 @@ public interface AlumnoService {
     AlumnoResponse obtener(Long id);
     AlumnoResponse actualizar(Long id, AlumnoRequest request);
     void desactivar(Long id);
+    String actualizarFoto(Long id, org.springframework.web.multipart.MultipartFile archivo);
 }

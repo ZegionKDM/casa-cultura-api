@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -78,6 +79,28 @@ class ApiIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data").isArray());
+    }
+
+    @Test
+    void superAdminCanResetUserPassword() throws Exception {
+        String token = loginToken();
+        Usuario admin = usuarioRepository.findByNombreUsuario(USERNAME).orElseThrow();
+        mockMvc.perform(put("/api/v1/auth/usuarios/" + admin.getId() + "/password")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"passwordNueva":"NewPassword123!"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("Contraseña actualizada."));
+
+        Usuario updated = usuarioRepository.findById(admin.getId()).orElseThrow();
+        org.junit.jupiter.api.Assertions.assertTrue(passwordEncoder.matches("NewPassword123!", updated.getPasswordHash()));
+
+        // Restore password for other tests
+        updated.setPasswordHash(passwordEncoder.encode(PASSWORD));
+        usuarioRepository.save(updated);
     }
 
     @Test

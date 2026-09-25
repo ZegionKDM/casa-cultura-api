@@ -61,4 +61,9 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiResponse<>(false, message, null));
     }
 
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<?>> maxUploadSize(org.springframework.web.multipart.MaxUploadSizeExceededException ex) {
+        return ResponseEntity.badRequest()
+                .body(new ApiResponse<>(false, "La imagen seleccionada supera el tamaño máximo permitido (5 MB).", null));
+    }
 }

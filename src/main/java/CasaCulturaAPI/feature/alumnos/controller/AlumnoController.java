@@ -65,6 +65,14 @@ public class AlumnoController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Alumno actualizado.", service.actualizar(id, request)));
     }
 
+    @PostMapping(value = "/{id}/foto", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'SUPERVISOR')")
+    public ResponseEntity<ApiResponse<?>> actualizarFoto(
+            @PathVariable Long id, @RequestParam("archivo") org.springframework.web.multipart.MultipartFile archivo) {
+        String url = service.actualizarFoto(id, archivo);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Fotografía actualizada exitosamente.", java.util.Map.of("url", url)));
+    }
+
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
     public ResponseEntity<ApiResponse<?>> desactivar(@PathVariable Long id) {

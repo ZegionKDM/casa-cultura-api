@@ -338,6 +338,7 @@ public class TeacherPortalServiceImpl implements TeacherPortalService {
                 .telefono(p.getTelefono())
                 .direccion(p.getDireccion())
                 .correo(p.getCorreo())
+                .fotoUrl(p.getFotoUrl())
                 .especialidad(d.getEspecialidad())
                 .estado(d.getEstado())
                 .build();

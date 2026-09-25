@@ -38,3 +38,30 @@ export async function apiRequest(path, options = {}) {
 
   return payload?.data ?? payload
 }
+
+export async function apiUpload(path, formData, options = {}) {
+  const token = getStoredToken()
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+    body: formData,
+    ...options,
+  })
+
+  const payload = await response.json().catch(() => null)
+  if (!response.ok || payload?.success === false) {
+    if (response.status === 401) {
+      clearStoredSession()
+      if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+        window.location.href = '/?expired=true'
+      }
+      throw new Error('Tu sesión ha expirado o no es válida. Por favor, inicia sesión nuevamente.')
+    }
+    throw new Error(payload?.message || 'No fue posible subir el archivo.')
+  }
+
+  return payload?.data ?? payload
+}

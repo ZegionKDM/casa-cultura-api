@@ -35,7 +35,7 @@ const isTeacher = computed(() => route.path.startsWith('/docente'))
 
 const headerTitle = computed(() => route.meta.title || 'Dashboard')
 
-const headerSubtitle = computed(() => route.meta.subtitle || 'Panel de Administración')
+const headerSubtitle = computed(() => 'Casa de la Cultura de Tlaxiaco')
 
 const userName = computed(() => {
   if (storedUser.value?.persona) {
