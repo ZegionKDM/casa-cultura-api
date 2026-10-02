@@ -23,6 +23,9 @@ public class UsuarioRequest {
     @Size(max = 20)
     private String telefono;
 
+    @Size(max = 500)
+    private String fotoUrl;
+
     @NotNull private Long rolId;
     @NotBlank @Size(max = 80) private String nombreUsuario;
     @NotBlank @Size(min = 8, max = 100) private String password;

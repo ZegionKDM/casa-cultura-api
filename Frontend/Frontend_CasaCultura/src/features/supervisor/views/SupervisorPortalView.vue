@@ -538,6 +538,7 @@ function getInitials(name, surname) {
   <DashboardLayout
     role="SUPERVISOR"
     :username="supervisorName"
+    :foto-url="currentUser.persona?.fotoUrl || currentUser.fotoUrl || ''"
     :items="navItems"
     :active="activeView"
     @navigate="activeView = $event"

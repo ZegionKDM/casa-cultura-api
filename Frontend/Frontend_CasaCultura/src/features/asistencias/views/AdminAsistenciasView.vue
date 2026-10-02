@@ -62,6 +62,7 @@ const filteredAsistencias = computed(() => {
       ...a,
       alumno: a.alumno || (al ? `${al.nombre} ${al.apellidoPaterno} ${al.apellidoMaterno || ''}`.trim() : 'Alumno'),
       matricula: a.matricula || al?.matricula || '',
+      fotoUrl: al?.fotoUrl || a.fotoUrl || '',
       grupo: a.grupo || grp?.nombreGrupo || 'Grupo Cultural',
       taller: crs?.nombre || grp?.curso || '',
       cursoId: crs?.id || ofr?.cursoId || '',

@@ -66,6 +66,7 @@ const filteredPagos = computed(() => {
       ...p,
       alumno: p.alumno || (al ? `${al.nombre} ${al.apellidoPaterno} ${al.apellidoMaterno || ''}`.trim() : 'Alumno'),
       matricula: p.matricula || al?.matricula || '',
+      fotoUrl: al?.fotoUrl || p.fotoUrl || '',
       grupo: p.grupo || grp?.nombreGrupo || 'Grupo Cultural',
       taller: crs?.nombre || grp?.curso || '',
       cursoId: crs?.id || ofr?.cursoId || '',

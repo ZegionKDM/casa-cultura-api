@@ -147,6 +147,7 @@ const currentDateFormatted = computed(() => {
     role="ALUMNO"
     :username="studentMatricula"
     :full-name="studentFullName"
+    :foto-url="student.fotoUrl || ''"
     :badge="studentMatricula"
     :items="navItems"
     :active="activeView"

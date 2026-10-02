@@ -43,7 +43,13 @@ function toggleActionMenu(id) {
           <td>
             <div class="user-cell">
               <div class="avatar">
-                <span>{{ item.nombreUsuario ? item.nombreUsuario.charAt(0).toUpperCase() : 'U' }}</span>
+                <img
+                  v-if="item.persona?.fotoUrl || item.fotoUrl"
+                  :src="item.persona?.fotoUrl || item.fotoUrl"
+                  alt="Foto del usuario"
+                  class="avatar-img-table"
+                />
+                <span v-else>{{ item.nombreUsuario ? item.nombreUsuario.charAt(0).toUpperCase() : 'U' }}</span>
               </div>
               <div>
                 <strong>{{ item.nombreUsuario }}</strong>
@@ -53,7 +59,7 @@ function toggleActionMenu(id) {
           </td>
 
           <td>
-            {{ item.persona ? `${item.persona.nombre} ${item.persona.apellidoPaterno || ''}` : (item.correo || 'Usuario del Sistema') }}
+            {{ (item.persona?.nombre ? `${item.persona.nombre} ${item.persona.apellidoPaterno || ''}` : null) || (item.nombre ? `${item.nombre} ${item.apellidoPaterno || ''}` : null) || (item.correo || 'Usuario del Sistema') }}
           </td>
 
           <td>{{ item.rol || item.nombreRol || 'SUPER_ADMIN' }}</td>

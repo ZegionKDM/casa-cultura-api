@@ -117,9 +117,14 @@ const workshopStats = computed(() => {
 
   // Map each course with its groups, enrollments and payments
   return data.cursos.map(curso => {
-    // Find groups of this course
+    // Find ofertas for this course
+    const ofertaIds = (data.ofertas || [])
+      .filter(o => o.cursoId === curso.id)
+      .map(o => o.id)
+
+    // Find groups of this course (via ofertaId, direct cursoId, or name)
     const groupIds = data.grupos
-      .filter(g => g.cursoId === curso.id || g.nombreCurso === curso.nombre)
+      .filter(g => (g.ofertaId && ofertaIds.includes(g.ofertaId)) || g.cursoId === curso.id || g.nombreCurso === curso.nombre)
       .map(g => g.id)
 
     // Find enrollments in these groups
@@ -280,18 +285,21 @@ const recentPayments = computed(() => {
     const inscripcion = data.inscripciones.find(i => i.id === p.inscripcionId)
     const alumno = data.alumnos.find(a => a.id === inscripcion?.alumnoId)
     const grupo = data.grupos.find(g => g.id === inscripcion?.grupoId)
+    const oferta = grupo ? data.ofertas.find(o => o.id === grupo.ofertaId) : null
+    const curso = oferta ? data.cursos.find(c => c.id === oferta.cursoId) : null
 
     const alumnoName = alumno
       ? `${alumno.nombre} ${alumno.apellidoPaterno}`.trim()
       : (p.alumno || `Inscripción #${p.inscripcionId}`)
 
-    const tallerName = grupo?.nombreGrupo || grupo?.curso || p.taller || 'Taller General'
+    const tallerName = curso ? `${curso.nombre} (${grupo.nombreGrupo})` : (grupo?.nombreGrupo || p.taller || 'Taller General')
     const dateFormatted = p.fechaPago || p.fechaVencimiento || 'Sin fecha'
     const amountFormatted = `$${getPaymentAmount(p).toFixed(2)}`
 
     return {
       id: p.id,
       alumno: alumnoName,
+      fotoUrl: alumno?.fotoUrl || '',
       taller: tallerName,
       fecha: dateFormatted,
       monto: amountFormatted,
@@ -728,7 +736,20 @@ const todaySchedules = computed(() => {
                     v-for="pago in recentPayments"
                     :key="pago.id"
                   >
-                    <td><strong>{{ pago.alumno }}</strong></td>
+                    <td>
+                      <div class="user-cell-mini">
+                        <div class="avatar-mini">
+                          <img
+                            v-if="pago.fotoUrl"
+                            :src="pago.fotoUrl"
+                            alt="Foto"
+                            class="avatar-img-table"
+                          />
+                          <span v-else>{{ pago.alumno ? pago.alumno.charAt(0).toUpperCase() : 'A' }}</span>
+                        </div>
+                        <strong>{{ pago.alumno }}</strong>
+                      </div>
+                    </td>
                     <td>{{ pago.taller }}</td>
                     <td>{{ pago.fecha }}</td>
                     <td>{{ pago.monto }}</td>

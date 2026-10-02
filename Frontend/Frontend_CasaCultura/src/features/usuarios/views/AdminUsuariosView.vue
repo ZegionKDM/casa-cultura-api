@@ -10,6 +10,7 @@ import { useAdminData } from '../../admin/composables/useAdminData.js'
 import UsuarioTable from '../components/UsuarioTable.vue'
 import UsuarioFormModal from '../components/UsuarioFormModal.vue'
 import ResetPasswordModal from '../components/ResetPasswordModal.vue'
+import CameraCaptureModal from '../../../components/common/CameraCaptureModal.vue'
 import {
   createUser,
   deactivateUser,
@@ -21,6 +22,18 @@ const { data, showToast, loadAllData, exportToCsv } = useAdminData()
 const search = ref('')
 const isSaving = ref(false)
 const showCreateModal = ref(false)
+const showCameraModal = ref(false)
+const capturedPhotoUrl = ref('')
+
+function openCreateUserModal() {
+  capturedPhotoUrl.value = ''
+  showCreateModal.value = true
+}
+
+function onUserPhotoSaved(eventData) {
+  capturedPhotoUrl.value = eventData.url
+  showToast('Fotografía capturada y asignada al usuario administrativo.', 'success')
+}
 
 const showPasswordModal = ref(false)
 const targetUserId = ref(null)
@@ -112,7 +125,7 @@ function handleExport() {
       </div>
 
       <div class="header-actions-group">
-        <button class="primary-button" @click="showCreateModal = true">
+        <button class="primary-button" @click="openCreateUserModal">
           <Plus :size="18" />
           Nuevo Usuario
         </button>
@@ -154,8 +167,22 @@ function handleExport() {
       :alumnos="data.alumnos || []"
       :docentes="data.docentes || []"
       :usuarios="data.usuarios || []"
+      :photo-url="capturedPhotoUrl"
       @close="showCreateModal = false"
       @save="handleSaveUser"
+      @open-camera="showCameraModal = true"
+      @clear-photo="capturedPhotoUrl = ''"
+    />
+
+    <!-- Camera Modal Reusable Component for Usuario -->
+    <CameraCaptureModal
+      v-if="showCameraModal"
+      :show="showCameraModal"
+      entity-type="usuario"
+      title="Tomar Foto del Usuario Administrativo"
+      @close="showCameraModal = false"
+      @photo-saved="onUserPhotoSaved"
+      @saved="onUserPhotoSaved"
     />
 
     <!-- Reset Password Modal -->

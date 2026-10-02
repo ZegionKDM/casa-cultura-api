@@ -13,4 +13,23 @@ public class UsuarioResponse {
     private String nombreUsuario;
     private EstadoRegistro estado;
     private Boolean debeCambiarPassword;
+
+    private String nombre;
+    private String apellidoPaterno;
+    private String apellidoMaterno;
+    private String correo;
+    private String telefono;
+    private String fotoUrl;
+    private PersonaDto persona;
+
+    @Data @Builder
+    public static class PersonaDto {
+        private Long id;
+        private String nombre;
+        private String apellidoPaterno;
+        private String apellidoMaterno;
+        private String correo;
+        private String telefono;
+        private String fotoUrl;
+    }
 }

@@ -50,6 +50,10 @@ public class UsuarioAccountServiceImpl implements UsuarioAccountService {
         if (request.getPersonaId() != null) {
             persona = personaRepository.findById(request.getPersonaId())
                     .orElseThrow(() -> new ResourceNotFoundException("Persona no encontrada."));
+            if (request.getFotoUrl() != null && !request.getFotoUrl().isBlank()) {
+                persona.setFotoUrl(request.getFotoUrl().trim());
+                persona = personaRepository.save(persona);
+            }
         } else {
             if (request.getNombre() == null || request.getNombre().isBlank()) {
                 throw new IllegalArgumentException("El nombre de la persona es obligatorio.");
@@ -66,6 +70,8 @@ public class UsuarioAccountServiceImpl implements UsuarioAccountService {
                             ? request.getCorreo().trim() : null)
                     .telefono(request.getTelefono() != null && !request.getTelefono().isBlank()
                             ? request.getTelefono().trim() : null)
+                    .fotoUrl(request.getFotoUrl() != null && !request.getFotoUrl().isBlank()
+                            ? request.getFotoUrl().trim() : null)
                     .build());
         }
 
@@ -133,9 +139,35 @@ public class UsuarioAccountServiceImpl implements UsuarioAccountService {
     }
 
     private UsuarioResponse toResponse(Usuario x) {
-        return UsuarioResponse.builder().id(x.getId()).personaId(x.getPersona().getId())
-                .rolId(x.getRol().getId()).rol(x.getRol().getNombre())
-                .nombreUsuario(x.getNombreUsuario()).estado(x.getEstado())
-                .debeCambiarPassword(Boolean.TRUE.equals(x.getDebeCambiarPassword())).build();
+        Persona p = x.getPersona();
+        UsuarioResponse.PersonaDto personaDto = null;
+        if (p != null) {
+            personaDto = UsuarioResponse.PersonaDto.builder()
+                    .id(p.getId())
+                    .nombre(p.getNombre())
+                    .apellidoPaterno(p.getApellidoPaterno())
+                    .apellidoMaterno(p.getApellidoMaterno())
+                    .correo(p.getCorreo())
+                    .telefono(p.getTelefono())
+                    .fotoUrl(p.getFotoUrl())
+                    .build();
+        }
+
+        return UsuarioResponse.builder()
+                .id(x.getId())
+                .personaId(p != null ? p.getId() : null)
+                .rolId(x.getRol().getId())
+                .rol(x.getRol().getNombre())
+                .nombreUsuario(x.getNombreUsuario())
+                .estado(x.getEstado())
+                .debeCambiarPassword(Boolean.TRUE.equals(x.getDebeCambiarPassword()))
+                .nombre(p != null ? p.getNombre() : null)
+                .apellidoPaterno(p != null ? p.getApellidoPaterno() : null)
+                .apellidoMaterno(p != null ? p.getApellidoMaterno() : null)
+                .correo(p != null ? p.getCorreo() : null)
+                .telefono(p != null ? p.getTelefono() : null)
+                .fotoUrl(p != null ? p.getFotoUrl() : null)
+                .persona(personaDto)
+                .build();
     }
 }

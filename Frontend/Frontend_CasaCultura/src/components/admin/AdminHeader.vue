@@ -54,6 +54,19 @@ const userRole = computed(() => {
   return cleanRole
 })
 
+const userPhotoUrl = computed(() => {
+  return storedUser.value?.persona?.fotoUrl || storedUser.value?.fotoUrl || null
+})
+
+const userInitials = computed(() => {
+  if (userName.value) {
+    const parts = userName.value.trim().split(' ')
+    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+    return parts[0].slice(0, 2).toUpperCase()
+  }
+  return 'SA'
+})
+
 const notifications = ref([
   { title: 'Sistema actualizado', detail: 'Conexión activa con Casa de la Cultura API' },
   { title: 'Pagos y asistencias sincronizados', detail: 'Información en tiempo real' },
@@ -157,7 +170,15 @@ const handleLogout = async () => {
           class="user-info"
           @click="showUserMenu = !showUserMenu; showNotifications = false"
         >
-          <UserCircle :size="38" />
+          <div class="header-avatar-capsule">
+            <img
+              v-if="userPhotoUrl"
+              :src="userPhotoUrl"
+              alt="Foto de perfil"
+              class="header-avatar-img"
+            />
+            <span v-else class="header-avatar-initials">{{ userInitials }}</span>
+          </div>
           <div>
             <strong>{{ userName }}</strong>
             <span>{{ userRole }}</span>
@@ -169,8 +190,21 @@ const handleLogout = async () => {
           class="user-dropdown"
         >
           <div class="user-dropdown-header">
-            <strong>{{ userName }}</strong>
-            <span>{{ userRole }}</span>
+            <div class="user-dropdown-top">
+              <div class="header-avatar-capsule small">
+                <img
+                  v-if="userPhotoUrl"
+                  :src="userPhotoUrl"
+                  alt="Foto"
+                  class="header-avatar-img"
+                />
+                <span v-else class="header-avatar-initials">{{ userInitials }}</span>
+              </div>
+              <div class="user-dropdown-meta">
+                <strong>{{ userName }}</strong>
+                <span>{{ userRole }}</span>
+              </div>
+            </div>
           </div>
           <button
             class="logout-btn"
@@ -370,8 +404,53 @@ const handleLogout = async () => {
   color: #8b92a0;
 }
 
+.header-avatar-capsule {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4051a3 0%, #6366f1 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(64, 81, 163, 0.25);
+  border: 2px solid #e2e8f0;
+}
+
+.header-avatar-capsule.small {
+  width: 32px;
+  height: 32px;
+  font-size: 11px;
+}
+
+.header-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.header-avatar-initials {
+  letter-spacing: 0.5px;
+}
+
+.user-dropdown-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-dropdown-meta {
+  display: flex;
+  flex-direction: column;
+}
+
 .user-dropdown {
-  width: 200px;
+  width: 220px;
   padding: 12px;
   display: flex;
   flex-direction: column;

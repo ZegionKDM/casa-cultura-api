@@ -65,17 +65,19 @@ watch(
 const filteredEnrollments = computed(() => {
   const q = searchStudent.value.trim().toLowerCase()
   const list = props.inscripciones.filter(i => i.estado === 'ACTIVA' || !i.estado)
-  if (!q) return list.slice(0, 10)
-  return list.filter(i => {
+  const mapped = list.map(i => {
     const al = props.alumnos.find(a => a.id === i.alumnoId)
     const per = al?.persona
-    const fullName = `${al?.nombre || ''} ${al?.apellidoPaterno || ''} ${al?.apellidoMaterno || ''} ${per?.nombre || ''} ${i.alumno || ''}`.toLowerCase()
-    const mat = (i.matricula || al?.matricula || '').toLowerCase()
-    const grp = (i.grupo || '').toLowerCase()
-    const tel = (al?.telefono || per?.telefono || '').replace(/\D/g, '')
-    const em = (al?.correo || per?.correo || '').toLowerCase()
-    return fullName.includes(q) || mat.includes(q) || grp.includes(q) || tel.includes(q) || em.includes(q)
-  }).slice(0, 20)
+    return {
+      ...i,
+      fotoUrl: al?.fotoUrl || i.fotoUrl || '',
+      alumno: i.alumno || (al ? `${al.nombre} ${al.apellidoPaterno} ${al.apellidoMaterno || ''}`.trim() : 'Alumno'),
+      matricula: i.matricula || al?.matricula || '',
+      _searchStr: `${al?.nombre || ''} ${al?.apellidoPaterno || ''} ${al?.apellidoMaterno || ''} ${per?.nombre || ''} ${i.alumno || ''} ${i.matricula || al?.matricula || ''} ${i.grupo || ''} ${(al?.telefono || per?.telefono || '').replace(/\D/g, '')} ${al?.correo || per?.correo || ''}`.toLowerCase()
+    }
+  })
+  if (!q) return mapped.slice(0, 10)
+  return mapped.filter(i => i._searchStr.includes(q)).slice(0, 20)
 })
 
 function selectEnrollment(item) {
@@ -154,7 +156,13 @@ function handleSubmit() {
               class="selected-person-card"
             >
               <div class="person-avatar">
-                {{ selectedEnrollment.alumno ? selectedEnrollment.alumno.charAt(0).toUpperCase() : 'A' }}
+                <img
+                  v-if="selectedEnrollment.fotoUrl"
+                  :src="selectedEnrollment.fotoUrl"
+                  alt="Foto del alumno"
+                  class="avatar-img-table"
+                />
+                <span v-else>{{ selectedEnrollment.alumno ? selectedEnrollment.alumno.charAt(0).toUpperCase() : 'A' }}</span>
               </div>
               <div class="person-details">
                 <div class="name-row">
@@ -204,7 +212,13 @@ function handleSubmit() {
                   @click="selectEnrollment(item)"
                 >
                   <div class="person-avatar small">
-                    {{ item.alumno ? item.alumno.charAt(0).toUpperCase() : 'A' }}
+                    <img
+                      v-if="item.fotoUrl"
+                      :src="item.fotoUrl"
+                      alt="Foto"
+                      class="avatar-img-table"
+                    />
+                    <span v-else>{{ item.alumno ? item.alumno.charAt(0).toUpperCase() : 'A' }}</span>
                   </div>
                   <div class="picker-item-info">
                     <div class="name-row">

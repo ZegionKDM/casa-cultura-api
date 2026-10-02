@@ -6,7 +6,10 @@ import {
   UserCheck,
   Search,
   Check,
-  AlertCircle
+  AlertCircle,
+  Camera,
+  User,
+  Trash2
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -33,10 +36,14 @@ const props = defineProps({
   usuarios: {
     type: Array,
     default: () => []
+  },
+  photoUrl: {
+    type: String,
+    default: ''
   }
 })
 
-const emit = defineEmits(['close', 'save'])
+const emit = defineEmits(['close', 'save', 'open-camera', 'clear-photo'])
 
 const userCreationType = ref('admin') // 'admin' | 'existing'
 const personSearch = ref('')
@@ -48,7 +55,8 @@ const formAdminPerson = reactive({
   apellidoPaterno: '',
   apellidoMaterno: '',
   correo: '',
-  telefono: ''
+  telefono: '',
+  fotoUrl: ''
 })
 
 const formUser = reactive({
@@ -60,6 +68,39 @@ const formUser = reactive({
 
 const errors = ref({})
 
+const availableRoles = computed(() => {
+  if (userCreationType.value === 'admin') {
+    // Solo roles administrativos: excluir ALUMNO y DOCENTE
+    return (props.roles || []).filter(r => {
+      const name = (r.nombre || '').toUpperCase()
+      return !name.includes('ALUMNO') && !name.includes('DOCENTE') && !name.includes('ESTUDIANTE') && !name.includes('PROFESOR')
+    })
+  }
+
+  if (userCreationType.value === 'existing') {
+    if (selectedPerson.value) {
+      const target = selectedPerson.value.tipo === 'ALUMNO' ? 'ALUMNO' : 'DOCENTE'
+      return (props.roles || []).filter(r => (r.nombre || '').toUpperCase().includes(target))
+    }
+    // Si aún no selecciona persona, solo mostrar roles de Alumno o Docente
+    return (props.roles || []).filter(r => {
+      const name = (r.nombre || '').toUpperCase()
+      return name.includes('ALUMNO') || name.includes('DOCENTE')
+    })
+  }
+
+  return props.roles || []
+})
+
+watch(
+  () => props.photoUrl,
+  (url) => {
+    if (url) {
+      formAdminPerson.fotoUrl = url
+    }
+  }
+)
+
 watch(
   () => props.show,
   (val) => {
@@ -69,8 +110,12 @@ watch(
       personSearch.value = ''
       errors.value = {}
       Object.assign(formUser, { personaId: '', rolId: '', nombreUsuario: '', password: '' })
-      Object.assign(formAdminPerson, { nombre: '', apellidoPaterno: '', apellidoMaterno: '', correo: '', telefono: '' })
-      const supRole = props.roles.find(r => r.nombre.toUpperCase().includes('SUPERVISOR'))
+      Object.assign(formAdminPerson, { nombre: '', apellidoPaterno: '', apellidoMaterno: '', correo: '', telefono: '', fotoUrl: props.photoUrl || '' })
+      const adminRoles = (props.roles || []).filter(r => {
+        const name = (r.nombre || '').toUpperCase()
+        return !name.includes('ALUMNO') && !name.includes('DOCENTE')
+      })
+      const supRole = adminRoles.find(r => r.nombre.toUpperCase().includes('SUPERVISOR')) || adminRoles[0]
       if (supRole) formUser.rolId = supRole.id
     }
   }
@@ -89,6 +134,7 @@ const allPersons = computed(() => {
       correo: a.correo || 'Sin correo',
       telefono: a.telefono || '',
       matricula: a.matricula,
+      fotoUrl: a.fotoUrl || '',
       hasUser: existingUserPersonaIds.has(pId),
       raw: a
     })
@@ -103,6 +149,7 @@ const allPersons = computed(() => {
       correo: d.correo || 'Sin correo',
       telefono: d.telefono || '',
       especialidad: d.especialidad,
+      fotoUrl: d.fotoUrl || '',
       hasUser: existingUserPersonaIds.has(pId),
       raw: d
     })
@@ -139,16 +186,15 @@ function selectPersonForUser(p) {
     }
   }
 
-  if (!formUser.rolId) {
-    const targetRoleName = p.tipo === 'ALUMNO' ? 'ALUMNO' : 'DOCENTE'
-    const foundRole = props.roles.find(r => r.nombre.toUpperCase().includes(targetRoleName))
-    if (foundRole) formUser.rolId = foundRole.id
-  }
+  const targetRoleName = p.tipo === 'ALUMNO' ? 'ALUMNO' : 'DOCENTE'
+  const foundRole = (props.roles || []).find(r => r.nombre.toUpperCase().includes(targetRoleName))
+  if (foundRole) formUser.rolId = foundRole.id
 }
 
 function clearSelectedPerson() {
   selectedPerson.value = null
   formUser.personaId = ''
+  formUser.rolId = ''
 }
 
 function setUserCreationType(type) {
@@ -157,12 +203,19 @@ function setUserCreationType(type) {
   if (type === 'admin') {
     selectedPerson.value = null
     formUser.personaId = ''
-    if (!formUser.rolId) {
-      const supRole = props.roles.find(r => r.nombre.toUpperCase().includes('SUPERVISOR'))
-      if (supRole) formUser.rolId = supRole.id
-    }
+    const adminRoles = (props.roles || []).filter(r => {
+      const name = (r.nombre || '').toUpperCase()
+      return !name.includes('ALUMNO') && !name.includes('DOCENTE')
+    })
+    const supRole = adminRoles.find(r => r.nombre.toUpperCase().includes('SUPERVISOR')) || adminRoles[0]
+    formUser.rolId = supRole ? supRole.id : ''
   } else {
     formUser.rolId = ''
+    if (selectedPerson.value) {
+      const targetRoleName = selectedPerson.value.tipo === 'ALUMNO' ? 'ALUMNO' : 'DOCENTE'
+      const foundRole = (props.roles || []).find(r => r.nombre.toUpperCase().includes(targetRoleName))
+      if (foundRole) formUser.rolId = foundRole.id
+    }
   }
 }
 
@@ -225,6 +278,7 @@ function handleSubmit() {
         apellidoMaterno: formAdminPerson.apellidoMaterno?.trim() || null,
         correo: formAdminPerson.correo?.trim() || null,
         telefono: formAdminPerson.telefono ? formAdminPerson.telefono.replace(/[\s-]/g, '') : null,
+        fotoUrl: formAdminPerson.fotoUrl?.trim() || null,
         rolId: Number(formUser.rolId),
         nombreUsuario: formUser.nombreUsuario.trim(),
         password: formUser.password
@@ -301,6 +355,50 @@ function handleSubmit() {
               <span>Ingresa los datos personales del supervisor o administrador. Se creará automáticamente su registro en el sistema.</span>
             </div>
 
+            <!-- Fotografía Oficial del Usuario Administrativo -->
+            <div class="student-photo-section">
+              <div class="photo-avatar-box">
+                <img
+                  v-if="formAdminPerson.fotoUrl"
+                  :src="formAdminPerson.fotoUrl"
+                  alt="Foto del usuario"
+                  class="photo-preview-img"
+                />
+                <div v-else class="photo-placeholder">
+                  <User :size="32" />
+                  <span>Sin foto</span>
+                </div>
+              </div>
+
+              <div class="photo-info-box">
+                <div class="photo-title">Fotografía Oficial del Usuario</div>
+                <p class="photo-desc">
+                  Captura con la cámara web o del celular para la identificación oficial del supervisor o administrador.
+                </p>
+                <div class="photo-action-buttons">
+                  <button
+                    type="button"
+                    class="btn-photo-capture"
+                    @click="emit('open-camera')"
+                  >
+                    <Camera :size="15" />
+                    <span>{{ formAdminPerson.fotoUrl ? 'Cambiar / Tomar Nueva Foto' : 'Tomar Foto con Cámara' }}</span>
+                  </button>
+
+                  <button
+                    v-if="formAdminPerson.fotoUrl"
+                    type="button"
+                    class="btn-photo-remove"
+                    title="Quitar foto"
+                    @click="formAdminPerson.fotoUrl = ''; emit('clear-photo')"
+                  >
+                    <Trash2 :size="14" />
+                    <span>Quitar</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <div class="form-grid-2">
               <div class="field">
                 <label>Nombre(s) *</label>
@@ -370,7 +468,13 @@ function handleSubmit() {
               class="selected-person-card"
             >
               <div class="person-avatar">
-                {{ selectedPerson.nombreCompleto.charAt(0) }}
+                <img
+                  v-if="selectedPerson.fotoUrl"
+                  :src="selectedPerson.fotoUrl"
+                  alt="Foto"
+                  class="avatar-img-table"
+                />
+                <span v-else>{{ selectedPerson.nombreCompleto.charAt(0) }}</span>
               </div>
               <div class="person-details">
                 <strong>{{ selectedPerson.nombreCompleto }}</strong>
@@ -442,7 +546,13 @@ function handleSubmit() {
                   @click="selectPersonForUser(p)"
                 >
                   <div class="person-avatar small">
-                    {{ p.nombreCompleto.charAt(0) }}
+                    <img
+                      v-if="p.fotoUrl"
+                      :src="p.fotoUrl"
+                      alt="Foto"
+                      class="avatar-img-table"
+                    />
+                    <span v-else>{{ p.nombreCompleto.charAt(0) }}</span>
                   </div>
                   <div class="picker-item-info">
                     <div class="name-row">
@@ -475,10 +585,11 @@ function handleSubmit() {
               <select
                 v-model="formUser.rolId"
                 :class="{ 'has-error': errors.rolId }"
+                :disabled="userCreationType === 'existing' && !!selectedPerson"
               >
-                <option value="">Selecciona un rol</option>
+                <option value="" disabled>Selecciona un rol</option>
                 <option
-                  v-for="r in roles"
+                  v-for="r in availableRoles"
                   :key="r.id"
                   :value="r.id"
                 >
@@ -486,6 +597,12 @@ function handleSubmit() {
                 </option>
               </select>
               <span v-if="errors.rolId" class="error-text">{{ errors.rolId }}</span>
+              <span v-if="userCreationType === 'admin'" class="field-hint">
+                Solo se muestran roles con facultades administrativas (Supervisores y Admins).
+              </span>
+              <span v-else-if="selectedPerson" class="field-hint">
+                Rol fijado automáticamente a {{ selectedPerson.tipo === 'ALUMNO' ? 'Alumno' : 'Docente' }}.
+              </span>
             </div>
 
             <div class="field">

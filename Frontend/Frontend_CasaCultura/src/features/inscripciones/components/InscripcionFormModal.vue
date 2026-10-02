@@ -212,7 +212,13 @@ function handleSubmit() {
               class="selected-person-card"
             >
               <div class="person-avatar">
-                {{ selectedStudent.nombre.charAt(0).toUpperCase() }}
+                <img
+                  v-if="selectedStudent.fotoUrl"
+                  :src="selectedStudent.fotoUrl"
+                  alt="Foto del alumno"
+                  class="avatar-img-table"
+                />
+                <span v-else>{{ selectedStudent.nombre.charAt(0).toUpperCase() }}</span>
               </div>
               <div class="person-details">
                 <div class="name-row">
@@ -265,7 +271,13 @@ function handleSubmit() {
                   @click="selectStudent(a)"
                 >
                   <div class="person-avatar small">
-                    {{ a.nombre.charAt(0).toUpperCase() }}
+                    <img
+                      v-if="a.fotoUrl"
+                      :src="a.fotoUrl"
+                      alt="Foto"
+                      class="avatar-img-table"
+                    />
+                    <span v-else>{{ a.nombre.charAt(0).toUpperCase() }}</span>
                   </div>
                   <div class="picker-item-info">
                     <div class="name-row">

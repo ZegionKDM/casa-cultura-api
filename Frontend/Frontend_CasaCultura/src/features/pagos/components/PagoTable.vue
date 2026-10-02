@@ -42,7 +42,13 @@ function toggleActionMenu(id) {
           <td>
             <div class="user-cell">
               <div class="avatar">
-                <span>{{ item.alumno ? item.alumno.charAt(0).toUpperCase() : 'A' }}</span>
+                <img
+                  v-if="item.fotoUrl"
+                  :src="item.fotoUrl"
+                  alt="Foto del alumno"
+                  class="avatar-img-table"
+                />
+                <span v-else>{{ item.alumno ? item.alumno.charAt(0).toUpperCase() : 'A' }}</span>
               </div>
               <div>
                 <strong>{{ item.alumno || 'Alumno del Centro' }}</strong>

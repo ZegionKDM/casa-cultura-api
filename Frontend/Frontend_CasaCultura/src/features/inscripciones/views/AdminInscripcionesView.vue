@@ -48,6 +48,7 @@ const filteredInscripciones = computed(() => {
       ...i,
       alumno: i.alumno || (al ? `${al.nombre} ${al.apellidoPaterno} ${al.apellidoMaterno || ''}`.trim() : 'Alumno'),
       matricula: i.matricula || al?.matricula || '',
+      fotoUrl: al?.fotoUrl || i.fotoUrl || '',
       grupo: i.grupo || grp?.nombreGrupo || 'Grupo Cultural',
       taller: crs?.nombre || grp?.curso || '',
       cursoId: crs?.id || ofr?.cursoId || '',

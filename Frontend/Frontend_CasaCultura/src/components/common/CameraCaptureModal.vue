@@ -198,7 +198,7 @@ import {
   RotateCcw,
   Check
 } from 'lucide-vue-next'
-import { uploadStudentPhoto, uploadTeacherPhoto } from '@/services/archivoService'
+import { uploadStudentPhoto, uploadTeacherPhoto, uploadUserPhoto } from '@/services/archivoService'
 
 const props = defineProps({
   show: {
@@ -211,7 +211,7 @@ const props = defineProps({
   },
   entityType: {
     type: String,
-    default: 'alumno' // 'alumno' | 'docente'
+    default: 'alumno' // 'alumno' | 'docente' | 'usuario'
   },
   studentId: {
     type: [Number, String],
@@ -481,7 +481,12 @@ async function confirmPhoto() {
 
   isUploading.value = true
   try {
-    const uploadFn = props.entityType === 'docente' ? uploadTeacherPhoto : uploadStudentPhoto
+    let uploadFn = uploadStudentPhoto
+    if (props.entityType === 'docente') {
+      uploadFn = uploadTeacherPhoto
+    } else if (props.entityType === 'usuario') {
+      uploadFn = uploadUserPhoto
+    }
     const result = await uploadFn(capturedBlob.value)
     const eventPayload = {
       url: result?.url || result,

@@ -17,6 +17,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  fotoUrl: {
+    type: String,
+    default: '',
+  },
   badge: {
     type: String,
     default: '',
@@ -172,7 +176,13 @@ function toggleMenu() {
           <!-- User Profile Capsule -->
           <div class="topbar-user">
             <div class="avatar-capsule">
-              <span class="avatar-initials">{{ userInitials }}</span>
+              <img
+                v-if="fotoUrl"
+                :src="fotoUrl"
+                alt="Foto de perfil"
+                class="avatar-capsule-img"
+              />
+              <span v-else class="avatar-initials">{{ userInitials }}</span>
             </div>
             <div class="user-meta">
               <strong class="user-name">{{ displayName }}</strong>
@@ -565,6 +575,14 @@ function toggleMenu() {
   font-weight: 700;
   font-size: 12px;
   box-shadow: 0 2px 6px rgba(64, 81, 163, 0.3);
+  overflow: hidden;
+}
+
+.avatar-capsule-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
 }
 
 .user-meta {

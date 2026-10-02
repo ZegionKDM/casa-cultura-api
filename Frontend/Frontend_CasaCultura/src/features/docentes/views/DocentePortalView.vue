@@ -413,6 +413,7 @@ onMounted(() => {
     role="DOCENTE"
     :username="teacherUsername"
     :full-name="teacherDisplayName"
+    :foto-url="teacherProfile?.fotoUrl || ''"
     :badge="teacherSpecialty"
     :items="navItems"
     :active="activeTab"

@@ -40,3 +40,17 @@ export async function uploadTeacherPhoto(file) {
 
   return apiUpload('/api/v1/archivos/fotos/docente', formData)
 }
+
+/**
+ * Sube una fotografía de usuario administrativo antes de guardarlo o durante su registro.
+ * @param {File|Blob} file Archivo o Blob de imagen
+ * @returns {Promise<{ url: string }>}
+ */
+export async function uploadUserPhoto(file) {
+  const formData = new FormData()
+  const fileName = file.name || `captura_usuario_${Date.now()}.jpg`
+  formData.append('archivo', file, fileName)
+
+  return apiUpload('/api/v1/archivos/fotos/usuario', formData)
+}
+

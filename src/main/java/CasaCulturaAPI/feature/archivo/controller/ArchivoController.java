@@ -34,4 +34,12 @@ public class ArchivoController {
         String url = fileStorageService.guardarFoto(archivo, "docentes");
         return ResponseEntity.ok(new ApiResponse<>(true, "Fotografía de docente subida exitosamente.", Map.of("url", url)));
     }
+
+    @PostMapping(value = "/fotos/usuario", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'SUPERVISOR')")
+    public ResponseEntity<ApiResponse<Map<String, String>>> subirFotoUsuario(
+            @RequestParam("archivo") MultipartFile archivo) {
+        String url = fileStorageService.guardarFoto(archivo, "usuarios");
+        return ResponseEntity.ok(new ApiResponse<>(true, "Fotografía de usuario subida exitosamente.", Map.of("url", url)));
+    }
 }
